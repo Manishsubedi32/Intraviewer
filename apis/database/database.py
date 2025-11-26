@@ -8,17 +8,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL",f"postgresql://{os.getenv('DB_USERNAME', 'user')}:"
+    f"{os.getenv('DB_PASSWORD', 'password')}@"
+    f"{os.getenv('DB_HOST', 'localhost')}:"
+    f"{os.getenv('DB_PORT', '5432')}/"
+    f"{os.getenv('DB_NAME', 'intraviewer_db')}")
 
-if not DATABASE_URL:
-
-    username = os.getenv("DB_USERNAME")
-    password = os.getenv("DB_PASSWORD")
-    host = os.getenv("DB_HOST", "localhost")
-    port = os.getenv("DB_PORT", "5432")
-    database = os.getenv("DB_NAME")
-    
-    DATABASE_URL = f"postgresql://{username}:{password}@{host}:{port}/{database}"
+DATABASE_URL = f"postgresql+psycopg://{os.getenv('DB_USERNAME', 'user')}:{os.getenv('DB_PASSWORD', 'password')}@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'intraviewer_db')}"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -30,3 +26,14 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def test_database_connection():
+    """Test if database connection is working"""
+    try:
+        with engine.connect() as connection:
+            result = connection.execute(text("SELECT 1"))
+            return True, "Database connection successful"
+    except SQLAlchemyError as e:
+        return False, f"Database connection failed: {str(e)}"
+    except Exception as e:
+        return False, f"Unexpected error: {str(e)}"
