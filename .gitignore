@@ -129,3 +129,4 @@ config.local.py
 # Media files (if you have user uploads)
 media/
 uploads/
+key_generator.py

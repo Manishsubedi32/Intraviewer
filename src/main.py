@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from src.db.database import get_db, test_database_connection, engine, Base
 
+from src.routers import auth
 import os
 from dotenv import load_dotenv
 
@@ -26,3 +27,4 @@ async def debug_connection():
         "Full_ENV_DATABASE_URL": os.getenv('DATABASE_URL')
     }
 
+app.include_router(auth.router)
