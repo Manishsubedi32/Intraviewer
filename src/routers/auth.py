@@ -26,3 +26,4 @@ async def refresh_access_token(
         refresh_token: str = Header(),
         db: Session = Depends(get_db)):
     return await AuthService.get_refresh_token(token=refresh_token, db=db)
+

@@ -19,7 +19,7 @@ class BaseConfig:
 
 #Base schema for shared properties
 class UserSchemaBase(BaseModel):
-    username: str
+    email: EmailStr
 
     class Config(BaseConfig):
         pass
@@ -38,7 +38,6 @@ class UserResponse(UserSchemaBase):
     id: int
     firstname: str
     lastname: str
-    role: str
     is_active: bool
     created_at: datetime
 
