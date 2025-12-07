@@ -3,10 +3,10 @@ from fastapi.security.oauth2 import OAuth2PasswordBearer, OAuth2PasswordRequestF
 from sqlalchemy.orm import Session
 from src.models.models import User
 from src.db.database import get_db
-from src.core.security import verify_password, get_user_token, get_token_payload
+from src.core.security import get_current_user, verify_password, get_user_token, get_token_payload
 from src.core.security import get_password_hash
 from src.utils.responses import ResponseHandler
-from src.schemas.auth import Signup
+from src.schemas.auth import ChangePasswordRequest, Signup
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "token")
 
@@ -44,3 +44,20 @@ class AuthService:
             raise ResponseHandler.invalid_token('refresh')
 
         return await get_user_token(id=user.id, refresh_token=token)
+    
+    @staticmethod
+    async def ChangePassword(db: Session, change_request: ChangePasswordRequest, token):
+        user_id = get_current_user(token)
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        if not verify_password(change_request.old_password, user.password):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Old password is incorrect")
+        new_password = change_request.new_password
+        new_password_confirm = change_request.new_password_confirm
+        if new_password != new_password_confirm:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password and confirmation do not match")
+        hashed_password = get_password_hash(new_password)
+        user.password = hashed_password
+        db.commit()
+        return {"message": "Password updated successfully"}

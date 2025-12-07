@@ -20,6 +20,7 @@ class BaseConfig:
 #Base schema for shared properties
 class UserSchemaBase(BaseModel):
     email: EmailStr
+    role: str
 
     class Config(BaseConfig):
         pass
@@ -29,6 +30,7 @@ class Signup(BaseModel):
     lastname: str
     email: EmailStr
     password: str
+    role: str = "user"
 
     class Config(BaseConfig):
         pass
@@ -39,6 +41,7 @@ class UserResponse(UserSchemaBase):
     firstname: str
     lastname: str
     is_active: bool
+    role: str = "user"
     created_at: datetime
 
     class Config(BaseConfig):
@@ -64,3 +67,12 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = 'Bearer'
     expires_in: int
+
+class ChangePasswordRequest(BaseModel): #serializer for changing password
+    email: EmailStr
+    old_password: str
+    new_password: str
+    new_password_confirm: str
+
+    class Config(BaseConfig):
+        pass
