@@ -36,7 +36,7 @@ class Signup(BaseModel):
         pass
 
 #Schema for Response for api - does not include password
-class UserResponse(UserSchemaBase):
+class UserResponse(BaseModel):
     id: int
     firstname: str
     lastname: str
