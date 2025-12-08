@@ -1,18 +1,16 @@
 from fastapi import HTTPException , Depends, status
-from fastapi.security.oauth2 import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from src.models.models import User
 from src.db.database import get_db
 from src.core.security import get_current_user, verify_password, get_user_token, get_token_payload
 from src.core.security import get_password_hash
 from src.utils.responses import ResponseHandler
-from src.schemas.auth import ChangePasswordRequest, Signup
+from src.schemas.auth import ChangePasswordRequest, Signup, UserLogin
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl = "token")
 
 class AuthService:
     @staticmethod
-    async def login(user_credentials: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
         user = db.query(User).filter(User.email == user_credentials.email).first()
         if not user:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Credentials")
@@ -26,6 +24,8 @@ class AuthService:
     async def signup(db: Session, user: Signup):
         hashed_password = get_password_hash(user.password)
         user.password = hashed_password
+        if db.query(User).filter(User.email == user.email).first():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
         db_user = User(id=None, **user.model_dump())
         db.add(db_user)
         db.commit()

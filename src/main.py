@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from src.db.database import get_db, test_database_connection, engine, Base
 
-from src.routers import auth, users
+from src.routers import auth, users, questions
 import os
 from dotenv import load_dotenv
 
@@ -29,3 +29,4 @@ async def debug_connection():
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(questions.router)

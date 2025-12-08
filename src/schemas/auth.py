@@ -76,3 +76,12 @@ class ChangePasswordRequest(BaseModel): #serializer for changing password
 
     class Config(BaseConfig):
         pass
+
+class QuestionBase(BaseModel):
+    question_text: str
+    answer_text: str
+    difficulty_level: str
+    topic: str
+
+    class Config(BaseConfig):
+        pass

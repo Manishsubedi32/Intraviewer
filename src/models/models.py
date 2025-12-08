@@ -16,3 +16,13 @@ class User(Base):
     is_active = Column(Boolean, server_default="True", nullable=False)
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False) # here serve.. =tex... will evaluates NOW() fuction and stores the current tiemstamp in the column
     # created function of storing time is done by database not pythonoralchemy it only works when no value is sent to the column for created time
+
+class Questions(Base):
+    __tablename__ = "questions"
+
+    id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
+    question_text = Column(String, unique=False, nullable = False)
+    answer_text = Column(String, unique=False, nullable = False)
+    difficulty_level = Column(String, unique=False, nullable = False)
+    topic = Column(String, unique=False, nullable = False)
+    created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
