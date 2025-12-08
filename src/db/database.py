@@ -3,10 +3,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
-from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
+
 
 load_dotenv()
+
+
+DATABASE_URL = os.getenv("DATABASE_URL",f"postgresql://{os.getenv('DB_USERNAME', 'user')}:"
+    f"{os.getenv('DB_PASSWORD', 'password')}@"
+    f"{os.getenv('DB_HOST', 'localhost')}:"
+    f"{os.getenv('DB_PORT', '5432')}/"
+    f"{os.getenv('DB_NAME', 'intraviewer_db')}")
 
 DATABASE_URL = f"postgresql+psycopg://{os.getenv('DB_USERNAME', 'user')}:{os.getenv('DB_PASSWORD', 'password')}@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'intraviewer_db')}"
 
