@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from typing import List
 
-class BaseConfig:
+class BaseConfig: # common config for all schemas
     from_attributes = True
 
 

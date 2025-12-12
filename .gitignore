@@ -130,3 +130,4 @@ config.local.py
 media/
 uploads/
 key_generator.py
+logic.txt
