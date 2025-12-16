@@ -92,3 +92,90 @@ class InterviewResponse(Base):
     
     # Timestamps
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False)
+
+
+# ============================================
+# Media Stream Models (Real-time Recording)
+# ============================================
+
+class MediaSession(Base):
+    """Tracks real-time media streaming sessions"""
+    __tablename__ = "media_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, unique=True, nullable=False, index=True)  # UUID from frontend
+    interview_session_id = Column(Integer, ForeignKey("interview_sessions.id"), nullable=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    
+    # Session metadata
+    status = Column(String, nullable=False, server_default="active")  # active, completed, abandoned
+    total_chunks = Column(Integer, default=0)
+    total_frames = Column(Integer, default=0)
+    
+    # Storage paths
+    storage_path = Column(String, nullable=True)  # Base path for this session's files
+    
+    # Timestamps
+    started_at = Column(TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False)
+    last_activity = Column(TIMESTAMP(timezone=True), server_default=text("NOW()"), onupdate=text("NOW()"))
+    completed_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False)
+
+
+class AudioChunk(Base):
+    """Stores metadata for audio chunks (10-second segments)"""
+    __tablename__ = "audio_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    media_session_id = Column(Integer, ForeignKey("media_sessions.id"), nullable=False, index=True)
+    
+    # Chunk identification
+    chunk_index = Column(Integer, nullable=False)  # Sequential order
+    
+    # File storage
+    file_path = Column(String, nullable=False)  # Path to audio blob on disk/S3
+    file_size = Column(Integer, nullable=True)  # Size in bytes
+    mime_type = Column(String, default="audio/webm")
+    
+    # Timing information
+    start_timestamp = Column(TIMESTAMP(timezone=True), nullable=False)
+    end_timestamp = Column(TIMESTAMP(timezone=True), nullable=True)
+    duration_ms = Column(Integer, nullable=True)  # Duration in milliseconds
+    
+    # Processing status
+    processed = Column(Boolean, default=False)
+    transcription = Column(Text, nullable=True)
+    
+    # Timestamps
+    received_at = Column(TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False)
+
+
+class VideoFrame(Base):
+    """Stores metadata for video frames (captured every 2 seconds)"""
+    __tablename__ = "video_frames"
+
+    id = Column(Integer, primary_key=True, index=True)
+    media_session_id = Column(Integer, ForeignKey("media_sessions.id"), nullable=False, index=True)
+    audio_chunk_id = Column(Integer, ForeignKey("audio_chunks.id"), nullable=True, index=True)  # Associated audio chunk
+    
+    # Frame identification
+    frame_index = Column(Integer, nullable=False)  # Sequential order within session
+    chunk_index = Column(Integer, nullable=False)  # Which audio chunk this belongs to
+    
+    # File storage
+    file_path = Column(String, nullable=False)  # Path to image blob on disk/S3
+    file_size = Column(Integer, nullable=True)  # Size in bytes
+    mime_type = Column(String, default="image/jpeg")
+    
+    # Timing information
+    timestamp = Column(TIMESTAMP(timezone=True), nullable=False)
+    offset_ms = Column(Integer, nullable=True)  # Offset within audio chunk
+    
+    # Processing status
+    processed = Column(Boolean, default=False)
+    analysis = Column(JSONB, nullable=True)  # Facial expression, emotion, etc.
+    
+    # Timestamps
+    received_at = Column(TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False)

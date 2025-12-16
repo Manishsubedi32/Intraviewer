@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.db.database import get_db, test_database_connection, engine, Base
 
-from src.routers import auth, users, questions, application, session
+from src.routers import auth, users, questions, application, session, media_stream
 import os
 from dotenv import load_dotenv
 
@@ -27,7 +27,10 @@ app.add_middleware(
 )
 
 # Import models to ensure they're registered with Base
-from src.models.models import User, Questions, Application, InterviewSession, InterviewResponse
+from src.models.models import (
+    User, Questions, Application, InterviewSession, InterviewResponse,
+    MediaSession, AudioChunk, VideoFrame
+)
 
 @app.on_event("startup")
 async def startup_event():
@@ -82,6 +85,7 @@ async def debug_connection():
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(media_stream.router)
 app.include_router(questions.router)
 app.include_router(application.router)
 app.include_router(session.router)
