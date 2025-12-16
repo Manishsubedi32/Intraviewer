@@ -24,7 +24,15 @@ python-multipart==0.0.6
 # Rate Limiting
 slowapi==0.1.9
 
-# Testing (optional - can remove if not testing)
+# File Parsing: PDF, DOCX, Images (OCR)
+pdfminer.six==20231228
+python-docx==1.1.0
+Pillow==10.2.0
+pytesseract==0.3.10
+
+# HTTP Client (for Ollama LLM calls)
+httpx==0.28.1
+
+# Testing (optional - keep if running tests)
 pytest==7.4.3
 pytest-asyncio==0.21.1
-httpx==0.28.1

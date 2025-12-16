@@ -1,6 +1,6 @@
 from src.db.database import engine, Base
 # Import all your models here so SQLAlchemy knows about them
-from src.models.models import User 
+from src.models.models import User, Questions, Application 
 
 def reset_database():
     print("⚠️  Resetting database...")

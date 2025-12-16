@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.db.database import get_db, test_database_connection, engine, Base
 
-from src.routers import auth, users, questions
+from src.routers import auth, users, questions, application, session
 import os
 from dotenv import load_dotenv
 
@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 # Import models to ensure they're registered with Base
-from src.models.models import User
+from src.models.models import User, Questions, Application, InterviewSession, InterviewResponse
 
 @app.on_event("startup")
 async def startup_event():
@@ -39,6 +39,18 @@ async def startup_event():
 async def root():
     return {"message": "Welcome to Intraviewer Backend"}
 
+@app.post("/dev/reset-db")
+async def reset_database_endpoint():
+    """Development endpoint to reset database"""
+    try:
+        print("⚠️  Resetting database...")
+        Base.metadata.drop_all(bind=engine)
+        print("Dropped all tables...")
+        Base.metadata.create_all(bind=engine)
+        print("Created all tables...")
+        return {"message": "✅ Database reset complete."}
+    except Exception as e:
+        return {"error": f"Database reset failed: {str(e)}"}
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
@@ -71,3 +83,5 @@ async def debug_connection():
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(questions.router)
+app.include_router(application.router)
+app.include_router(session.router)
