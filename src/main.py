@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.db.database import get_db, test_database_connection, engine, Base
 
-from src.routers import auth, users, questions, application, session, media_stream
+from src.routers import auth, users, questions, application, session, media_stream, transcription
+from src.services.transcription import get_transcription_service
 import os
 from dotenv import load_dotenv
 
@@ -34,9 +35,29 @@ from src.models.models import (
 
 @app.on_event("startup")
 async def startup_event():
-    """Create database tables on startup"""
+    """Create database tables and load ML models on startup"""
+    # Create database tables
     Base.metadata.create_all(bind=engine)
     print("✅ Database tables created successfully")
+    
+    # Load faster-whisper model
+    try:
+        transcription_service = get_transcription_service()
+        transcription_service.load_model()
+        print("✅ Faster-Whisper model loaded successfully")
+    except Exception as e:
+        print(f"⚠️  Failed to load transcription model: {e}")
+        print("   Transcription features will be unavailable")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean shutdown of services"""
+    try:
+        transcription_service = get_transcription_service()
+        transcription_service.shutdown()
+        print("✅ Transcription service shut down")
+    except Exception as e:
+        print(f"⚠️  Error during shutdown: {e}")
 
 @app.get("/")
 async def root():
@@ -86,6 +107,7 @@ async def debug_connection():
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(media_stream.router)
+app.include_router(transcription.router)
 app.include_router(questions.router)
 app.include_router(application.router)
 app.include_router(session.router)

@@ -6,10 +6,12 @@ Handles real-time audio and video frame streaming from browser clients.
 - Receives JSON metadata and binary blobs
 - Manages multiple concurrent sessions
 - Stores data to disk and metadata to database
+- Triggers background transcription processing
 """
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from datetime import datetime
 import json
 import os
@@ -20,6 +22,7 @@ import uuid
 
 from src.db.database import get_db
 from src.models.models import MediaSession, AudioChunk, VideoFrame
+from src.services.transcription_processor import process_audio_chunk_transcription
 
 
 router = APIRouter(tags=["media-stream"])
@@ -92,7 +95,9 @@ async def handle_session_init(data: dict, websocket: WebSocket, db: Session):
             user_id=user_id,
             interview_session_id=interview_session_id,
             storage_path=storage_path,
-            status="active"
+            status="active",
+            audio_chunks=[],
+            video_frames=[]
         )
         db.add(media_session)
         db.commit()
@@ -126,21 +131,40 @@ async def handle_audio_metadata(data: dict, db: Session):
         return
     
     buffer = session_buffers[session_id]
+    chunk_key = f"audio_chunk_{chunk_index}"
     
-    # Store metadata in buffer, waiting for blob
-    buffer[f"audio_chunk_{chunk_index}"] = {
-        "chunk_index": chunk_index,
-        "start_timestamp": datetime.fromisoformat(start_timestamp.replace('Z', '+00:00')),
-        "end_timestamp": datetime.fromisoformat(end_timestamp.replace('Z', '+00:00')) if end_timestamp else None,
-        "duration_ms": duration_ms,
-        "metadata_received": True,
-        "blob_received": False
-    }
+    # Check if blob was already received
+    if chunk_key in buffer and buffer[chunk_key].get("blob_received"):
+        # Blob arrived first, add metadata and process
+        buffer[chunk_key].update({
+            "start_timestamp": datetime.fromisoformat(start_timestamp.replace('Z', '+00:00')),
+            "end_timestamp": datetime.fromisoformat(end_timestamp.replace('Z', '+00:00')) if end_timestamp else None,
+            "duration_ms": duration_ms,
+            "metadata_received": True
+        })
+        print(f"🔄 Metadata arrived after blob for chunk {chunk_index}, processing now")
+        # Both blob and metadata received, process immediately
+        blob_data = buffer[chunk_key]["blob_data"]
+        await process_complete_audio_chunk(session_id, chunk_index, blob_data, buffer[chunk_key], db)
+    else:
+        # Store metadata in buffer, waiting for blob
+        buffer[chunk_key] = {
+            "chunk_index": chunk_index,
+            "start_timestamp": datetime.fromisoformat(start_timestamp.replace('Z', '+00:00')),
+            "end_timestamp": datetime.fromisoformat(end_timestamp.replace('Z', '+00:00')) if end_timestamp else None,
+            "duration_ms": duration_ms,
+            "metadata_received": True,
+            "blob_received": False
+        }
+        print(f"📋 Metadata stored for chunk {chunk_index}, waiting for blob")
 
 
 async def handle_audio_blob(session_id: str, chunk_index: int, blob_data: bytes, db: Session):
     """Handle audio chunk blob data"""
+    print(f"🔍 DEBUG: handle_audio_blob called - session={session_id}, chunk={chunk_index}, size={len(blob_data)}")
+    
     if session_id not in session_buffers:
+        print(f"❌ DEBUG: Session {session_id} not in buffers")
         return
     
     buffer = session_buffers[session_id]
@@ -154,45 +178,100 @@ async def handle_audio_blob(session_id: str, chunk_index: int, blob_data: bytes,
             "blob_data": blob_data,
             "metadata_received": False
         }
+        print(f"🔄 Blob arrived first for chunk {chunk_index}, waiting for metadata")
         return
     
     chunk_meta = buffer[chunk_key]
+    
+    # Check if metadata was already received
+    if not chunk_meta.get("metadata_received"):
+        # Metadata not yet received, store blob
+        buffer[chunk_key]["blob_received"] = True
+        buffer[chunk_key]["blob_data"] = blob_data
+        print(f"🔄 Blob stored for chunk {chunk_index}, waiting for metadata")
+        return
+    
+    print(f"✅ Both blob and metadata received for chunk {chunk_index}, processing")
+    # Both blob and metadata received, process
+    await process_complete_audio_chunk(session_id, chunk_index, blob_data, chunk_meta, db)
+
+
+async def process_complete_audio_chunk(session_id: str, chunk_index: int, blob_data: bytes, chunk_meta: dict, db: Session):
+    """Process audio chunk when both blob and metadata are available"""
+    buffer = session_buffers[session_id]
     
     # Save blob to disk
     media_session = db.query(MediaSession).filter(
         MediaSession.id == buffer["db_session_id"]
     ).first()
     
+    print(f"🔍 DEBUG: Media session found: {media_session is not None}")
     if not media_session:
+        print(f"❌ DEBUG: No media session found!")
         return
+    
+    print(f"🔍 DEBUG: audio_chunks is None: {media_session.audio_chunks is None}")
+    print(f"🔍 DEBUG: audio_chunks value: {media_session.audio_chunks}")
     
     file_path = f"{media_session.storage_path}/audio/chunk_{chunk_index}.webm"
     
     with open(file_path, "wb") as f:
         f.write(blob_data)
     
-    # Save metadata to database
-    audio_chunk = AudioChunk(
-        media_session_id=media_session.id,
-        chunk_index=chunk_index,
-        file_path=file_path,
-        file_size=len(blob_data),
-        mime_type="audio/webm",
-        start_timestamp=chunk_meta.get("start_timestamp"),
-        end_timestamp=chunk_meta.get("end_timestamp"),
-        duration_ms=chunk_meta.get("duration_ms")
-    )
+    # Append to audio_chunks JSONB array
+    if media_session.audio_chunks is None:
+        media_session.audio_chunks = []
     
-    db.add(audio_chunk)
+    chunk_data = {
+        "chunk_index": chunk_index,
+        "file_path": file_path,
+        "file_size": len(blob_data),
+        "mime_type": "audio/webm",
+        "start_timestamp": chunk_meta.get("start_timestamp").isoformat() if chunk_meta.get("start_timestamp") else None,
+        "end_timestamp": chunk_meta.get("end_timestamp").isoformat() if chunk_meta.get("end_timestamp") else None,
+        "duration_ms": chunk_meta.get("duration_ms"),
+        "transcription": None,
+        "processed": False
+    }
+    
+    # Append and trigger SQLAlchemy change detection
+    audio_chunks_copy = media_session.audio_chunks.copy()
+    audio_chunks_copy.append(chunk_data)
+    media_session.audio_chunks = audio_chunks_copy
+    flag_modified(media_session, "audio_chunks")
+    
     media_session.total_chunks += 1
     media_session.last_activity = datetime.utcnow()
+    
+    # Debug: Check the data before commit
+    print(f"🔍 DEBUG: Audio chunks length before commit: {len(media_session.audio_chunks)}")
+    print(f"🔍 DEBUG: Audio chunks type: {type(media_session.audio_chunks)}")
+    
+    db.flush()
     db.commit()
+    db.refresh(media_session)
+    
+    # Debug: Check after commit
+    print(f"🔍 DEBUG: Audio chunks length after commit: {len(media_session.audio_chunks)}")
     
     # Clear from buffer
-    del buffer[chunk_key]
+    chunk_key = f"audio_chunk_{chunk_index}"
+    if chunk_key in buffer:
+        del buffer[chunk_key]
     buffer["chunks_received"] += 1
     
     print(f"✅ Audio chunk {chunk_index} saved for session {session_id}")
+    
+    # Trigger background transcription (non-blocking)
+    asyncio.create_task(
+        process_audio_chunk_transcription(
+            db=db,
+            session_id=session_id,
+            chunk_index=chunk_index,
+            file_path=file_path,
+            language="en"  # TODO: Get from session or auto-detect
+        )
+    )
 
 
 async def handle_frame_metadata(data: dict, db: Session):
@@ -252,26 +331,28 @@ async def handle_frame_blob(session_id: str, frame_index: int, blob_data: bytes,
     with open(file_path, "wb") as f:
         f.write(blob_data)
     
-    # Find associated audio chunk
-    audio_chunk = db.query(AudioChunk).filter(
-        AudioChunk.media_session_id == media_session.id,
-        AudioChunk.chunk_index == frame_meta.get("chunk_index")
-    ).first()
+    # Append to video_frames JSONB array
+    if media_session.video_frames is None:
+        media_session.video_frames = []
     
-    # Save metadata to database
-    video_frame = VideoFrame(
-        media_session_id=media_session.id,
-        audio_chunk_id=audio_chunk.id if audio_chunk else None,
-        frame_index=frame_meta.get("frame_index"),
-        chunk_index=frame_meta.get("chunk_index"),
-        file_path=file_path,
-        file_size=len(blob_data),
-        mime_type="image/jpeg",
-        timestamp=frame_meta.get("timestamp"),
-        offset_ms=frame_meta.get("offset_ms")
-    )
+    frame_data = {
+        "frame_index": frame_meta.get("frame_index"),
+        "chunk_index": frame_meta.get("chunk_index"),
+        "file_path": file_path,
+        "file_size": len(blob_data),
+        "mime_type": "image/jpeg",
+        "timestamp": frame_meta.get("timestamp").isoformat() if frame_meta.get("timestamp") else None,
+        "offset_ms": frame_meta.get("offset_ms"),
+        "processed": False,
+        "analysis": None
+    }
     
-    db.add(video_frame)
+    # Append and trigger SQLAlchemy change detection
+    video_frames_copy = media_session.video_frames.copy()
+    video_frames_copy.append(frame_data)
+    media_session.video_frames = video_frames_copy
+    flag_modified(media_session, "video_frames")
+    
     media_session.total_frames += 1
     media_session.last_activity = datetime.utcnow()
     db.commit()

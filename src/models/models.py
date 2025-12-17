@@ -115,6 +115,10 @@ class MediaSession(Base):
     # Storage paths
     storage_path = Column(String, nullable=True)  # Base path for this session's files
     
+    # Consolidated media data (JSONB arrays)
+    audio_chunks = Column(JSONB, default=list)  # Array of {chunk_index, file_path, transcription, timestamp, duration_ms}
+    video_frames = Column(JSONB, default=list)  # Array of {frame_index, file_path, timestamp, chunk_index}
+    
     # Timestamps
     started_at = Column(TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False)
     last_activity = Column(TIMESTAMP(timezone=True), server_default=text("NOW()"), onupdate=text("NOW()"))

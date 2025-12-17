@@ -32,6 +32,14 @@ pytesseract==0.3.10
 
 # HTTP Client (for Ollama LLM calls)
 httpx==0.28.1
+requests==2.31.0
+
+# Speech-to-Text Transcription
+faster-whisper==1.0.3
+# Audio processing dependencies (required by faster-whisper)
+av==12.0.0
+# CTranslate2 for efficient inference (CPU optimized)
+ctranslate2==4.4.0
 
 # Testing (optional - keep if running tests)
 pytest==7.4.3
