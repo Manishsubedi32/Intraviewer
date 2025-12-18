@@ -1,15 +1,23 @@
 from fastapi import FastAPI
 from src.db.database import get_db, test_database_connection, engine, Base
-
+from fastapi.middleware.cors import CORSMiddleware
 from src.routers import auth, users, questions, userinput,sessions
 import os
 from dotenv import load_dotenv
-
+from fastapi import FastAPI, WebSocket, UploadFile, File
 
 # Load environment variables
 load_dotenv()
 
 app = FastAPI(title="Intraviewer Backend", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
     
 
 @app.get("/db/debug")

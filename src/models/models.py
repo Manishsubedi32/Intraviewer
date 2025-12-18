@@ -80,9 +80,10 @@ class LiveChunksInput(Base): # here we will store live audio chunks to send to w
 
 class Transcript(Base): # now here our whisper sent user_response and ai_response to backend will be stored
     __tablename__ = "transcripts"
-    id = Column(Integer ,ForeignKey("session.id", ondelete="CASCADE"), primary_key=True, unique=True, nullable=False,index = True
-                )
-    is_ai_response = Column(Boolean, unique=False, nullable = False) # to identify if the transcript is from ai or user
+    id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
+    session_id = Column(Integer, ForeignKey("session.id", ondelete="CASCADE"), nullable=False)
+
+    is_ai_response = Column(Boolean, unique=False, nullable = False,default=False) # to identify if the transcript is from ai or user
     ai_response = Column(String, unique=False, nullable = True)
     user_response = Column(String, unique=False, nullable = True)
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
