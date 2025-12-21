@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from src.db.database import get_db
 from src.core.security import auth_scheme , get_current_user
 from src.services.sessions import SessionService
-
+from fastapi import WebSocket
 
 router = APIRouter(tags=["Sessions"], prefix="/sessions")
 
@@ -19,5 +19,5 @@ async def start_session(
     )
 
 @router.websocket("/ws/sessions/{session_id}")
-async def session_websocket_endpoint(websocket: Websocket, session_id: int,db: Session = Depends(get_db)):
+async def session_websocket_endpoint(websocket: WebSocket, session_id: int,db: Session = Depends(get_db)):
     return await SessionService.handle_session_websocket(websocket=websocket, session_id=session_id, db=db)
