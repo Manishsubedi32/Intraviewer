@@ -16,3 +16,7 @@ Questions
 GET /questions/all
 
 POST /questions/add --> only admin has the access
+
+POST /userinput/data --> frontend can store cv and prompt ani api will send back cvid ra promptid
+
+POST /sessions/start --> aba tyo mathi ko data pathaunu paryo yeta

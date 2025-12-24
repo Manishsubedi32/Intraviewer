@@ -1,35 +1,30 @@
-from fastapi import APIRouter, Depends, status, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from src.db.database import get_db
 from src.models.models import Cv,TextPrompts
 from src.core.security import auth_scheme , get_current_user
 from src.services.inputfunc import InputService
+
 router = APIRouter(tags=["User Input"], prefix="/userinput")
 
-@router.post("/upload-cv", status_code=status.HTTP_200_OK)
-async def upload_cv(
-    cv_data: bytes,
-    token: HTTPAuthorizationCredentials = Depends(auth_scheme), # Extract token from Authorization header
-    db: Session = Depends(get_db) # Get database session
-): 
-    return await InputService.upload_cv(
-        token=token,
-        db=db,
-        cv_data=cv_data
-    )
-
-
-@router.post("/create-prompt", status_code=status.HTTP_200_OK)
-async def create_prompt(
-    name: str,
-    prompt_text: str,
-    token: HTTPAuthorizationCredentials = Depends(auth_scheme), # Extract token from Authorization header
-    db: Session = Depends(get_db) # Get database session
+@router.post("/data", status_code=status.HTTP_201_CREATED)
+async def initialize_data(
+    background_tasks: BackgroundTasks, # it is a function of fastapi to run tasks in background after response is sent like processing files cv etc  
+    cv_file: Optional[UploadFile] = File(None),
+    cv_text: Optional[str] = Form(None),
+    job_topic: Optional[str] = Form(None),
+    job_text: Optional[str] = Form(None),
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme),
+    db: Session = Depends(get_db)
 ):
-    return await InputService.create_prompt(
-        token=token,
+    return await InputService.process_data(
         db=db,
-        name=name,
-        prompt_text=prompt_text
+        token=token,
+        cv_file=cv_file,
+        cv_text=cv_text,
+        job_topic=job_topic,
+        job_text=job_text,
+        background_tasks=background_tasks
     )

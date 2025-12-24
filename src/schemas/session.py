@@ -14,3 +14,7 @@ class SessionBase(BaseModel): # this is the serializer for InterviewSession mode
 
     class Config(BaseConfig):
         pass
+
+class SessionCreateRequest(BaseModel):
+    cv_id: int
+    prompt_id: int
