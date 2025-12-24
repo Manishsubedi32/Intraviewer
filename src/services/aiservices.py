@@ -4,7 +4,8 @@ class AudioProcessor:
     def __init__(self):
         self.buffer = []
         
-        self.COLAB_URL = "https://uncontemporary-jakobe-brumous.ngrok-free.dev"
+        #self.COLAB_URL = "https://uncontemporary-jakobe-brumous.ngrok-free.dev"
+        self.COLAB_URL = "https://kristian-waggish-underfoot.ngrok-free.dev"
 
     async def process_audio(self, audio_chunk: bytes) -> str:
         self.buffer.append(audio_chunk)
