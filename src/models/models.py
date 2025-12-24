@@ -30,8 +30,8 @@ class User(Base):
     lastname = Column(String, unique=False, nullable = False)
     email = Column(String, unique=True, nullable = False)
     password = Column(String, nullable = False)
-    role = Column(Enum(UserRole), nullable = False, server_default=UserRole.USER)
-    is_active = Column(Enum(IsActive), server_default=IsActive.TRUE, nullable=False)
+    role = Column(Enum(UserRole), nullable = False, server_default=text("'USER'"))
+    is_active = Column(Boolean, server_default=text("True"), nullable=False)
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False) # here serve.. =tex... will evaluates NOW() fuction and stores the current tiemstamp in the column
     # created function of storing time is done by database not pythonoralchemy it only works when no value is sent to the column for created time
 
@@ -51,7 +51,7 @@ class InterviewSession(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     cv_id = Column(Integer, ForeignKey("cv_uploads.id", ondelete="SET NULL"), nullable=True)
     prompt_id = Column(Integer, ForeignKey("text_prompts.id", ondelete="SET NULL"), nullable=True)
-    status = Column(Enum(SessionStatus), unique=False, nullable = False, server_default=SessionStatus.ONGOING) # ongoing, completed, terminated
+    status = Column(Enum(SessionStatus), unique=False, nullable = False, server_default=text("'ONGOING'")) # ongoing, completed, terminated
     start_time = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
     final_score = Column(Integer, unique=False, nullable = True)
     analysis = Column(String, unique=False, nullable = True) # for storing analysis of answer by 

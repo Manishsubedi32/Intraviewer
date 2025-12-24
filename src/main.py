@@ -35,6 +35,29 @@ async def debug_connection():
         "Full_ENV_DATABASE_URL": os.getenv('DATABASE_URL')
     }
 
+#=====================================================
+# for development purpose only remove it in production
+#=====================================================
+
+@app.on_event("startup")
+async def create_db_tables():
+    """Create database tables on startup"""
+    Base.metadata.create_all(bind=engine)
+    test_database_connection()
+    print("☑️ Database connected and tables created (if not exist).")
+
+@app.get("/")
+async def root():
+    return {"message": "Welcome to Intraviewer Backend"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "OK"}
+
+#=====================================
+#=================================
+
+
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(questions.router)

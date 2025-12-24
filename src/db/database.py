@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
-
+from sqlalchemy.exc import SQLAlchemyError
 
 load_dotenv()
 
@@ -32,7 +32,7 @@ def test_database_connection():
     try:
         with engine.connect() as connection:
             result = connection.execute(text("SELECT 1"))
-            return True, "Database connection successful"
+            return True, "☑️ Database connection successful"
     except SQLAlchemyError as e:
         return False, f"Database connection failed: {str(e)}"
     except Exception as e:
