@@ -1,22 +1,13 @@
-TO check db connection use : GET /db/debug
-
-Authentication
-Defined in auth.py (Prefix: /auth)
-
-POST /auth/signup
-POST /auth/login
-POST /auth/refresh
-
-Users
-GET /users/me
-POST /users/me/password --> to change password
-
-Questions
-
-GET /questions/all
-
-POST /questions/add --> only admin has the access
-
-POST /userinput/data --> frontend can store cv and prompt ani api will send back cvid ra promptid
-
-POST /sessions/start --> aba tyo mathi ko data pathaunu paryo yeta
+Order Phase Method Endpoint Description
+1 Auth POST /auth/signup Register a new user.
+2 Auth POST /auth/login Login to receive Access & Refresh tokens.
+3 Auth POST /auth/refresh Get a new Access token using a Refresh token.
+4 Setup POST /userinput/data Upload CV (PDF) and Job Description to get IDs.
+5 Setup GET /userinput/cvs (Optional) List previously uploaded CVs. (not created)
+6 Interview POST /sessions/start Initialize a session using cv_id and prompt_id.
+7 Interview WS /sessions/ws/{session_id} WebSocket: Live audio streaming, AI questions, & transcription.
+8 Interview POST /sessions/end/{session_id} Manually terminate the session (if not done via WS).
+9 Dashboard GET /sessions/history List all past interviews with status and scores. {nocreated}
+10 Review GET /sessions/{session_id}/analysis Get final AI feedback, score, and summary.
+11 Review GET | /sessions/{session_id}/transcript | Get the full text transcript of the conversation. |
+12 Review GET /questions/{session_id} Get the specific list of questions generated for this session.

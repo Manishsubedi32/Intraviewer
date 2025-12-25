@@ -72,10 +72,13 @@ class InputService:
             prompt_text=job_clean_text
         )
         db.add(new_prompt)
-        db.flush()
-
-        # 4. Commit to database to persist CV and Prompt
+        db.flush() 
         db.commit()
+
+    
+        db.refresh(new_cv)
+        db.refresh(new_prompt)
+        
 
         return {
             "message": "Data stored successfully",

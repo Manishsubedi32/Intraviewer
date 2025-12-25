@@ -13,7 +13,7 @@ router = APIRouter(tags=["Sessions"], prefix="/sessions")
 async def start_session(
     request: SessionCreateRequest,
     token: HTTPAuthorizationCredentials = Depends(auth_scheme), # Extract token from Authorization header
-    db: Session = Depends(get_db) # Get database session
+    db: Session = Depends(get_db), # Get database session
 ):
     return await SessionService.create_session(
         token=token,
@@ -37,3 +37,51 @@ async def end_session(
 @router.websocket("/ws/sessions/{session_id}")
 async def session_websocket_endpoint(websocket: WebSocket, session_id: int,db: Session = Depends(get_db)):
     return await SessionService.handle_session_websocket(websocket=websocket, session_id=session_id, db=db)
+
+@router.get("/questions/{session_id}", status_code=status.HTTP_200_OK)
+async def get_session_questions(
+    session_id: int,
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme), # Extract token from Authorization header
+    db: Session = Depends(get_db), # Get database session
+):
+    return await SessionService.fetch_session_questions( # fetch question function to be made soon
+        token=token,
+        db=db,
+        session_id=session_id
+    )
+#for users to fetch their session analysis and score
+@router.get("/{session_id}/analysis")
+async def get_session_analysis(
+    session_id: int,
+    db: Session = Depends(get_db),
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme)
+):
+    return await SessionService.fetch_session_analysis(
+        token=token,
+        db=db,
+        session_id=session_id
+    )
+
+@router.get("/{session_id}/transcript")
+async def get_session_transcript(
+    session_id: int,
+    db: Session = Depends(get_db),
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme)
+):
+    return await SessionService.fetch_session_transcript(
+        token=token,
+        db=db,
+        session_id=session_id
+    )
+
+@router.post("/end/{session_id}", status_code=status.HTTP_200_OK)
+async def end_session(
+    session_id: int,
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme), # Extract token from Authorization header
+    db: Session = Depends(get_db), # Get database session
+):
+    return await SessionService.terminate_session(
+        token=token,
+        db=db,
+        session_id=session_id
+    )

@@ -1,12 +1,13 @@
 import base64
-from fastapi import HTTPException , Depends, WebSocket, status
+import json
+from fastapi import HTTPException, Depends, WebSocket, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from src.models.models import LiveChunksInput, SessionStatus, InterviewSession, User,Transcript # sqlalchemy models
-from src.schemas.session import SessionBase #pydantic model
-from src.core.security import get_current_user, auth_scheme
-from src.core.security import get_password_hash
-from src.services.aiservices import AudioProcessor  # hypothetical module for audio processing , we can get it from collab
+from src import db
+from src.models.models import LiveChunksInput, SessionStatus, InterviewSession, User, Transcript, Questions
+from src.core.security import get_current_user
+from src.services.aiservices import AudioProcessor
+
 class SessionService:
     @staticmethod
     async def create_session(token: HTTPAuthorizationCredentials, db: Session, cv_id: int, prompt_id: int):
@@ -24,7 +25,7 @@ class SessionService:
         db.commit()
         db.refresh(new_session)
         return {"message": "Session created successfully", "session_id": new_session.id}
-    
+
     @staticmethod
     async def complete_session(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
         user_id = get_current_user(token)
@@ -55,29 +56,24 @@ class SessionService:
     @staticmethod
     async def handle_session_websocket(websocket: WebSocket, session_id: int,db: Session):
         await websocket.accept()
-        processor = AudioProcessor() # instance of audio processing
+        processor = AudioProcessor()
+        
         try: 
             while True:
-                message = await websocket.receive_json()
-                
-                msg_type = message.get("type") # uta bata pathauni kun type
-                data_b64 = message.get("data")# actual data
-
-                if not data_b64:
-                    continue
-
-                if msg_type == "audio":
-                    # 1. Store audio chunk
+                message = await websocket.receive()
+                if "bytes" in message: # used to check if binary data is present
+                    audio_bytes = message["bytes"]
+                    
+                    # 1. Store Raw Audio Chunk
                     new_chunk = LiveChunksInput(
                         session_id=session_id,
-                        audio_chunk=data_b64,# this is binary data in base64 format got audio, this is done to transfer audio in json format cause json cant handle binary data directly
+                        audio_chunk=audio_bytes, # Storing raw bytes is more efficient than Base64
                         video_chunk=None
                     )
                     db.add(new_chunk)
                     db.commit()
 
-                    # 2. Process audio (decode base64 first)
-                    audio_bytes = base64.b64decode(data_b64) # by decoding we get original audio bytes from json transferred data
+                    # 2. Process Audio
                     transcription = await processor.process_audio(audio_bytes)
                     
                     if transcription and len(transcription.strip()) > 0:
@@ -91,19 +87,119 @@ class SessionService:
                         
                         await websocket.send_text(f"Transcription: {transcription}")
 
-                elif msg_type == "video":
-                    # 1. Store video chunk
-                    new_chunk = LiveChunksInput(
-                        session_id=session_id,
-                        audio_chunk=None,
-                        video_chunk=data_b64
-                    )
-                    db.add(new_chunk)
-                    db.commit()
-                    
-                    # Future: Add emotion detection logic here
-            
+                elif "text" in message: # as we know video is sent as text frame in base64 inside json
+                    try:
+                        payload = json.loads(message["text"])
+                        msg_type = payload.get("type")
+                        data_content = payload.get("data")
+
+                        if msg_type == "video":
+                            # Handle Video (sent as Base64 string inside JSON)
+                            new_chunk = LiveChunksInput(
+                                session_id=session_id,
+                                audio_chunk=None,
+                                video_chunk=data_content
+                            )
+                            db.add(new_chunk)
+                            db.commit()
+                        
+                        elif msg_type == "end_interview":
+                            # Trigger your LLM analysis logic here
+                            pass
+
+                    except json.JSONDecodeError:
+                        print("Received invalid JSON text")
+
         except Exception as e:
                 print(f"Error: {e}")
         finally:
                 await websocket.close()
+    
+    @staticmethod
+    async def fetch_session_analysis(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
+
+        user_id = get_current_user(token)
+        session = db.query(InterviewSession).filter(
+            InterviewSession.id == session_id,
+            InterviewSession.user_id == user_id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+            
+        return {
+            "session_id": session.id,
+            "status": session.status,
+            "final_score": session.final_score,
+            "analysis_text": session.analysis,
+            "created_at": session.start_time
+        }
+
+    @staticmethod
+    async def fetch_session_transcript(token: HTTPAuthorizationCredentials, db: Session, session_id:int):
+        user_id = get_current_user(token)
+    
+   
+        session = db.query(InterviewSession).filter(
+            InterviewSession.id == session_id, 
+            InterviewSession.user_id == user_id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        
+        # hamle specific quesiton lai specific transcript garexainam
+        transcripts = db.query(Transcript).filter(
+            Transcript.session_id == session_id
+        ).order_by(Transcript.timestamp).all()
+
+        return {
+            "transcripts": [t.user_response for t in transcripts]
+        }
+    
+    @staticmethod
+    async def fetch_session_questions(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
+        user_id = get_current_user(token)
+        
+        session = db.query(InterviewSession).filter(
+            InterviewSession.id == session_id,
+            InterviewSession.user_id == user_id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        questions = db.query(Questions).filter(
+            Questions.session_id == session_id
+        ).order_by(Questions.order).all()
+        
+        return {
+            "questions": [
+                {
+                    "id": q.id,
+                    "question_text": q.question_text,
+                    "difficulty_level": q.difficulty_level,
+                    "topic": q.topic,
+                    "created_at": q.created_at
+                } for q in questions
+            ]
+        }
+    
+    #session termination
+    @staticmethod
+    async def terminate_session(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
+        user_id = get_current_user(token)
+        
+        session = db.query(InterviewSession).filter(
+            InterviewSession.id == session_id,
+            InterviewSession.user_id == user_id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        session.status = SessionStatus.TERMINATED
+        db.commit()
+        
+        return {"message": "Session terminated successfully"}
