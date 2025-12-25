@@ -26,6 +26,33 @@ class SessionService:
         return {"message": "Session created successfully", "session_id": new_session.id}
     
     @staticmethod
+    async def complete_session(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
+        user_id = get_current_user(token)
+        
+        # Get the session and verify ownership
+        session = db.query(InterviewSession).filter(
+            InterviewSession.id == session_id,
+            InterviewSession.user_id == user_id
+        ).first()
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found or you don't have permission"
+            )
+        
+        # Update session status to completed
+        session.status = SessionStatus.COMPLETED
+        db.commit()
+        db.refresh(session)
+        
+        return {
+            "message": "Session completed successfully",
+            "session_id": session.id,
+            "status": session.status.value
+        }
+    
+    @staticmethod
     async def handle_session_websocket(websocket: WebSocket, session_id: int,db: Session):
         await websocket.accept()
         processor = AudioProcessor() # instance of audio processing

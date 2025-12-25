@@ -74,7 +74,8 @@ class InputService:
         db.add(new_prompt)
         db.flush()
 
-        
+        # 4. Commit to database to persist CV and Prompt
+        db.commit()
 
         return {
             "message": "Data stored successfully",

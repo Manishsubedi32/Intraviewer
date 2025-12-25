@@ -22,6 +22,18 @@ async def start_session(
         prompt_id=request.prompt_id
     )
 
+@router.post("/end/{session_id}", status_code=status.HTTP_200_OK)
+async def end_session(
+    session_id: int,
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme),
+    db: Session = Depends(get_db)
+):
+    return await SessionService.complete_session(
+        token=token,
+        db=db,
+        session_id=session_id
+    )
+
 @router.websocket("/ws/sessions/{session_id}")
 async def session_websocket_endpoint(websocket: WebSocket, session_id: int,db: Session = Depends(get_db)):
     return await SessionService.handle_session_websocket(websocket=websocket, session_id=session_id, db=db)
