@@ -72,8 +72,11 @@ class InputService:
             prompt_text=job_clean_text
         )
         db.add(new_prompt)
-        db.flush()
+        db.flush() 
+        db.commit()
 
+        db.refresh(new_cv)
+        db.refresh(new_prompt)
         
 
         return {

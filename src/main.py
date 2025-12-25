@@ -35,12 +35,8 @@ async def debug_connection():
         "Full_ENV_DATABASE_URL": os.getenv('DATABASE_URL')
     }
 
-<<<<<<< HEAD
-#=====================================================
-# for development purpose only remove it in production
-#=====================================================
-
 @app.on_event("startup")
+
 async def create_db_tables():
     """Create database tables on startup"""
     Base.metadata.create_all(bind=engine)
@@ -50,24 +46,13 @@ async def create_db_tables():
 @app.get("/")
 async def root():
     return {"message": "Welcome to Intraviewer Backend"}
-
 @app.get("/health")
 async def health_check():
     return {"status": "OK"}
 
-#=====================================
-#=================================
 
-
-app.include_router(auth.router)
-app.include_router(users.router)
-app.include_router(questions.router)
-app.include_router(userinput.router)
-app.include_router(sessions.router)
-=======
 app.include_router(auth.router) #yesma authentication is covered
 app.include_router(users.router) # user related operations like getting user details, and change password
 app.include_router(questions.router) # question related operations like adding, updating, deleting questions
 app.include_router(userinput.router) # users session detail like uploading cv and text prompts
 app.include_router(sessions.router) # interview session related operations like creating session and handling websocket for live audio/video
->>>>>>> 83a94eb (user input taking api added)

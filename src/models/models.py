@@ -1,3 +1,4 @@
+from typing import Text
 from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, LargeBinary
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql.expression import text
@@ -40,11 +41,12 @@ class Questions(Base):
 
     id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
     question_text = Column(String, unique=False, nullable = False)
-    answer_text = Column(String, unique=False, nullable = False)
-    difficulty_level = Column(Enum(DifficultyLevel), unique=False, nullable = False)
-    topic = Column(String, unique=False, nullable = False)
+    session_id = Column(Integer, ForeignKey("session.id", ondelete="CASCADE"), nullable=False) # ADDED THIS
+    difficulty_level = Column(Enum(DifficultyLevel), unique=False, nullable = True)
+    order = Column(Integer)
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
-
+    session = relationship("InterviewSession", back_populates="questions")
+    
 class InterviewSession(Base):
     __tablename__ = "session"
     id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
@@ -54,7 +56,11 @@ class InterviewSession(Base):
     status = Column(Enum(SessionStatus), unique=False, nullable = False, server_default=text("'ONGOING'")) # ongoing, completed, terminated
     start_time = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
     final_score = Column(Integer, unique=False, nullable = True)
-    analysis = Column(String, unique=False, nullable = True) # for storing analysis of answer by 
+    analysis = Column(Text, unique=False, nullable = True) # for storing analysis of answer by 
+    questions = relationship("Questions", back_populates="session")
+    transcripts = relationship("Transcript", back_populates="session")
+    if status == SessionStatus.COMPLETED:
+        end_time = Column(TIMESTAMP(timezone = "True"),nullable = True)
 
 class Cv(Base):
     __tablename__ = "cv_uploads"
@@ -82,9 +88,9 @@ class LiveChunksInput(Base): # here we will store live audio chunks to send to w
 class Transcript(Base): # now here our whisper sent user_response and ai_response to backend will be stored
     __tablename__ = "transcripts"
     id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
-    session_id = Column(Integer, ForeignKey("session.id", ondelete="CASCADE"), nullable=False)
-
+    session_id = Column(Integer, ForeignKey("session.id", ondelete="CASCADE"), nullable=False) #multiple transcripts can belong to one session
     is_ai_response = Column(Boolean, unique=False, nullable = False,default=False) # to identify if the transcript is from ai or user
     ai_response = Column(String, unique=False, nullable = True)
     user_response = Column(String, unique=False, nullable = True)
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
+    session = relationship("InterviewSession", back_populates="transcripts") # this allows us to access session from transcript and vice versa eg my_transcript.session.user_id
