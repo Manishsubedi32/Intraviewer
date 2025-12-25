@@ -111,17 +111,22 @@ class SessionService:
 
                         if msg_type == "video":
                             # Handle Video (sent as Base64 string inside JSON)
+                            video_bytes = base64.b64decode(data_content)
                             new_chunk = LiveChunksInput(
                                 session_id=session_id,
                                 audio_chunk=None,
-                                video_chunk=data_content
+                                video_chunk=video_bytes
                             )
                             db.add(new_chunk)
                             db.commit()
                         
                         elif msg_type == "end_interview":
                             # Trigger your LLM analysis logic here
-                            pass
+                            session.status = SessionStatus.COMPLETED
+                            db.commit()
+
+                            await websocket.send_json({"type": "status", "data": "Interview Completed"})
+                            break
 
                     except json.JSONDecodeError:
                         print("Received invalid JSON text")
@@ -168,7 +173,7 @@ class SessionService:
         # hamle specific quesiton lai specific transcript garexainam
         transcripts = db.query(Transcript).filter(
             Transcript.session_id == session_id
-        ).order_by(Transcript.timestamp).all()
+        ).order_by(Transcript.created_at).all()
 
         return {
             "transcripts": [t.user_response for t in transcripts]
