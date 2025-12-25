@@ -54,13 +54,26 @@ class SessionService:
         }
     
     @staticmethod
-    async def handle_session_websocket(websocket: WebSocket, session_id: int,db: Session):
+    async def handle_session_websocket(websocket: WebSocket, session_id: int, db: Session):
+        session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
+        
+        if not session:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        # it only owkrs when session is ongoing
+        if session.status != SessionStatus.ONGOING:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
         await websocket.accept()
         processor = AudioProcessor()
         
         try: 
             while True:
                 message = await websocket.receive()
+    
+                # -------------------------------------------------------
                 if "bytes" in message: # used to check if binary data is present
                     audio_bytes = message["bytes"]
                     
@@ -87,6 +100,9 @@ class SessionService:
                         
                         await websocket.send_text(f"Transcription: {transcription}")
 
+                # -------------------------------------------------------
+                # CASE 2: TEXT FRAME -> JSON (Video, Commands, Config)
+                # -------------------------------------------------------
                 elif "text" in message: # as we know video is sent as text frame in base64 inside json
                     try:
                         payload = json.loads(message["text"])

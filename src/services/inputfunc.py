@@ -75,7 +75,6 @@ class InputService:
         db.flush() 
         db.commit()
 
-    
         db.refresh(new_cv)
         db.refresh(new_prompt)
         
