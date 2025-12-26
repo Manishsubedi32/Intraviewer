@@ -1,5 +1,5 @@
-from typing import Text
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, LargeBinary
+
+from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, LargeBinary, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql.expression import text
 from sqlalchemy.sql.sqltypes import TIMESTAMP,Time
@@ -59,9 +59,7 @@ class InterviewSession(Base):
     analysis = Column(Text, unique=False, nullable = True) # for storing analysis of answer by 
     questions = relationship("Questions", back_populates="session")
     transcripts = relationship("Transcript", back_populates="session")
-    if status == SessionStatus.COMPLETED:
-        end_time = Column(TIMESTAMP(timezone = "True"),nullable = True)
-
+   
 class Cv(Base):
     __tablename__ = "cv_uploads"
     id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
