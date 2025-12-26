@@ -224,3 +224,21 @@ class SessionService:
         db.commit()
         
         return {"message": "Session terminated successfully"}
+    
+    @staticmethod
+    async def delete_session(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
+        user_id = get_current_user(token)
+        user = db.query(User).filter(User.id == user_id).first()
+        if user.role != "admin":
+            raise HTTPException(status_code=403, detail="Only admin can delete sessions")
+        session = db.query(InterviewSession).filter(
+            InterviewSession.id == session_id,
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        db.delete(session)
+        db.commit()
+        
+        return {"message": "Session deleted successfully"}

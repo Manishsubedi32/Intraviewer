@@ -85,3 +85,14 @@ async def end_session(
         db=db,
         session_id=session_id
     )
+@router.post("/delete/{session_id}", status_code=status.HTTP_200_OK)
+async def delete_session(
+    session_id: int,
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme), 
+    db: Session = Depends(get_db), 
+):
+    return await SessionService.delete_session(
+        token=token,
+        db=db,
+        session_id=session_id
+    )

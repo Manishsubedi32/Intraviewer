@@ -11,3 +11,5 @@ Order Phase Method Endpoint Description
 10 Review GET /sessions/{session_id}/analysis Get final AI feedback, score, and summary.
 11 Review GET | /sessions/{session_id}/transcript | Get the full text transcript of the conversation. |
 12 Review GET /questions/{session_id} Get the specific list of questions generated for this session.
+13.sessions/delete/{session_id}
+14.User delete /user/delete/{user_id} to delete user(have to be admin)

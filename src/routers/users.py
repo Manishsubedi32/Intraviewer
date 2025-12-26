@@ -6,6 +6,7 @@ from src.db.database import get_db
 from src.schemas.auth import UserResponse, ChangePasswordRequest
 from src.models.models import User
 from src.core.security import auth_scheme , get_current_user
+from src.services.userdel import UserDeletionService
 
 router = APIRouter(tags=["Users"], prefix="/users")
 
@@ -36,3 +37,30 @@ async def change_password(
         token=token
     )
     return {"message": "Password changed successfully"}
+
+@router.delete("delete/{user_id}", status_code=status.HTTP_200_OK)
+async def delete_user_account(
+    user_id: int,
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme),
+    db: Session = Depends(get_db)
+):
+    await UserDeletionService.DeleteAccount(
+        User_id=user_id,
+        db=db,
+        token=token
+    )
+    return {"message": "User account deleted successfully"}
+
+
+@router.get("/all", status_code=status.HTTP_200_OK, response_model=list[UserResponse])
+async def get_all_users(
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme),
+    db: Session = Depends(get_db)
+):
+    requesting_user_id = get_current_user(token)
+    requesting_user = db.query(User).filter(User.id == requesting_user_id).first()
+    if requesting_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can access all users")
+    
+    users = db.query(User).all()
+    return users
