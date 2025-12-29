@@ -1,4 +1,5 @@
-Order Phase Method Endpoint Description
+# Order Phase Method Endpoint Description
+
 1 Auth POST /auth/signup Register a new user.
 2 Auth POST /auth/login Login to receive Access & Refresh tokens.
 3 Auth POST /auth/refresh Get a new Access token using a Refresh token.
@@ -13,3 +14,9 @@ Order Phase Method Endpoint Description
 12 Review GET /questions/{session_id} Get the specific list of questions generated for this session.
 13.sessions/delete/{session_id}
 14.User delete /user/delete/{user_id} to delete user(have to be admin)
+
+# To run the code also by using docker and GPU
+
+TO run this code (recommended for gpu related activities)
+docker-compose up -d db pgadmin ----> Docker: Runs only Postgres PgAdmin
+uvicorn src.main:app --reload ——> Local Mac: Runs FastAPI + AI Services (accessing GPU).

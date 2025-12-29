@@ -201,7 +201,6 @@ class SessionService:
                     "id": q.id,
                     "question_text": q.question_text,
                     "difficulty_level": q.difficulty_level,
-                    "topic": q.topic,
                     "created_at": q.created_at
                 } for q in questions
             ]

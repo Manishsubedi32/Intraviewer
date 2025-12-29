@@ -12,8 +12,10 @@ RUN apt-get update \
         curl \
         tesseract-ocr \ 
         tesseract-ocr-eng \
+        build-essential \ 
+        cmake \
         && rm -rf /var/lib/apt/lists/*
-
+#build-essential and cmake are for some python packages that is required for c++ compilation during installation
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir --upgrade pip \

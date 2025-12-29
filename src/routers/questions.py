@@ -6,6 +6,7 @@ from src.core.security import auth_scheme , get_current_user
 from src.services.questions import QuestionsService
 from src.schemas.auth import QuestionBase
 
+
 router = APIRouter(tags=["Questions"], prefix ="/questions")
 
 @router.get("/all",status_code=status.HTTP_200_OK)
@@ -24,3 +25,24 @@ async def add_question(
     
 ):
     return await QuestionsService.addQuestion(token=token, db= db, question=question)
+
+
+@router.post("/generate/{session_id}", status_code=status.HTTP_201_CREATED)
+async def generate_session_questions(
+    session_id: int,
+   db: Session = Depends(get_db),
+   token: HTTPAuthorizationCredentials = Depends(auth_scheme)
+):
+    """
+    Triggers AI to generate questions for a specific session and saves them.
+    """
+    questions = await QuestionsService.generate_and_save_questions(
+        db=db,
+        session_id=session_id,
+    )
+    
+    return {
+        "message": "Questions generated successfully",
+        "count": len(questions),
+        "questions": questions
+    }
