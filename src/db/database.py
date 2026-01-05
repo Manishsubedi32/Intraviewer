@@ -14,7 +14,7 @@ DATABASE_URL = os.getenv("DATABASE_URL",f"postgresql://{os.getenv('DB_USERNAME',
     f"{os.getenv('DB_PORT', '5432')}/"
     f"{os.getenv('DB_NAME', 'intraviewer_db')}")
 
-DATABASE_URL = f"postgresql+psycopg://{os.getenv('DB_USERNAME', 'user')}:{os.getenv('DB_PASSWORD', 'password')}@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'intraviewer_db')}"
+DATABASE_URL = f"postgresql+psycopg://{os.getenv('DB_USERNAME', 'user')}:{os.getenv('DB_PASSWORD', 'password')}@{os.getenv('localhost', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'intraviewer_db')}"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

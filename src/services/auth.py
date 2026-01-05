@@ -35,11 +35,12 @@ class AuthService:
     @staticmethod
     async def get_refresh_token(token, db):
         payload = get_token_payload(token)
-        user_id = payload.get('id', None)
+        # Check for 'sub' first (standard JWT claim), then 'id' for backwards compatibility
+        user_id = payload.get('sub', None) or payload.get('id', None)
         if not user_id:
             raise ResponseHandler.invalid_token('refresh')
 
-        user = db.query(User).filter(User.id == user_id).first()
+        user = db.query(User).filter(User.id == int(user_id)).first()
         if not user:
             raise ResponseHandler.invalid_token('refresh')
 
