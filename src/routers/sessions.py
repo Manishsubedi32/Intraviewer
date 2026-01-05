@@ -74,8 +74,8 @@ async def get_session_transcript(
         session_id=session_id
     )
 
-@router.post("/end/{session_id}", status_code=status.HTTP_200_OK)
-async def end_session(
+@router.post("/terminate/{session_id}", status_code=status.HTTP_200_OK)
+async def terminate_session(
     session_id: int,
     token: HTTPAuthorizationCredentials = Depends(auth_scheme), # Extract token from Authorization header
     db: Session = Depends(get_db), # Get database session
