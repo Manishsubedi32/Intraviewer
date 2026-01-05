@@ -4,9 +4,10 @@ from fastapi import HTTPException, Depends, WebSocket, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from src import db
-from src.models.models import LiveChunksInput, SessionStatus, InterviewSession, User, Transcript, Questions
+from src.models.models import LiveChunksInput, SessionStatus, InterviewSession, User, Transcript, Questions,AnalysisResult
 from src.core.security import get_current_user
 from src.services.aiservices import AudioProcessor
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 class SessionService:
     @staticmethod
@@ -55,6 +56,8 @@ class SessionService:
     
     @staticmethod
     async def handle_session_websocket(websocket: WebSocket, session_id: int, db: Session):
+        await websocket.accept()
+        
         session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
         
         if not session:
@@ -66,16 +69,15 @@ class SessionService:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
-        await websocket.accept()
         processor = AudioProcessor()
         
-        try: 
+        try:
             while True:
-                message = await websocket.receive()
+                data = await websocket.receive_text()
     
                 # -------------------------------------------------------
-                if "bytes" in message: # used to check if binary data is present
-                    audio_bytes = message["bytes"]
+                if "bytes" in data: # used to check if binary data is present
+                    audio_bytes = data["bytes"]
                     
                     # 1. Store Raw Audio Chunk
                     new_chunk = LiveChunksInput(
@@ -103,9 +105,9 @@ class SessionService:
                 # -------------------------------------------------------
                 # CASE 2: TEXT FRAME -> JSON (Video, Commands, Config)
                 # -------------------------------------------------------
-                elif "text" in message: # as we know video is sent as text frame in base64 inside json
+                elif "text" in data: # as we know video is sent as text frame in base64 inside json
                     try:
-                        payload = json.loads(message["text"])
+                        payload = json.loads(data["text"])
                         msg_type = payload.get("type")
                         data_content = payload.get("data")
 
@@ -131,29 +133,50 @@ class SessionService:
                     except json.JSONDecodeError:
                         print("Received invalid JSON text")
 
+        except WebSocketDisconnect:
+            print(f"Client disconnected from session {session_id}")
+            # No need to close here, it's already disconnected
+            
         except Exception as e:
-                print(f"Error: {e}")
+            print(f"WebSocket Error: {e}")
+            # Only close if still connected
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.close(code=1011) # Internal Error
+                
         finally:
-                await websocket.close()
+            # FIX: Check state before closing in finally block
+            if websocket.client_state == WebSocketState.CONNECTED:
+                try:
+                    await websocket.close()
+                except RuntimeError:
+                    # Ignore if it was already closed concurrently
+                    pass
     
     @staticmethod
     async def fetch_session_analysis(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
-
         user_id = get_current_user(token)
+    
+   
         session = db.query(InterviewSession).filter(
-            InterviewSession.id == session_id,
+            InterviewSession.id == session_id, 
             InterviewSession.user_id == user_id
         ).first()
         
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
-            
+
+        
+        # hamle specific quesiton lai specific analysis garexainam
+        analysis = db.query(AnalysisResult).filter(
+            AnalysisResult.session_id == session_id
+        ).first()
+
+        if not analysis:
+            raise HTTPException(status_code=404, detail="Analysis not found for this session")
+
         return {
-            "session_id": session.id,
-            "status": session.status,
-            "final_score": session.final_score,
-            "analysis_text": session.analysis,
-            "created_at": session.start_time
+            "analysis_text": analysis.analysis_text,
+            "score": analysis.score
         }
 
     @staticmethod

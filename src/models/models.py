@@ -56,9 +56,10 @@ class InterviewSession(Base):
     status = Column(Enum(SessionStatus), unique=False, nullable = False, server_default=text("'ONGOING'")) # ongoing, completed, terminated
     start_time = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
     final_score = Column(Integer, unique=False, nullable = True)
-    analysis = Column(Text, unique=False, nullable = True) # for storing analysis of answer by 
+
     questions = relationship("Questions", back_populates="session")
     transcripts = relationship("Transcript", back_populates="session")
+    analysis_results = relationship("AnalysisResult", back_populates="session")
    
 class Cv(Base):
     __tablename__ = "cv_uploads"
@@ -92,3 +93,12 @@ class Transcript(Base): # now here our whisper sent user_response and ai_respons
     user_response = Column(String, unique=False, nullable = True)
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
     session = relationship("InterviewSession", back_populates="transcripts") # this allows us to access session from transcript and vice versa eg my_transcript.session.user_id
+
+class AnalysisResult(Base): # storing analysis result from ai after the session is completed
+    __tablename__ = "analysis_results"
+    id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
+    session_id = Column(Integer, ForeignKey("session.id", ondelete="CASCADE"), nullable=False)
+    analysis_text = Column(Text, unique=False, nullable = False)
+    score = Column(Integer, unique=False, nullable = False)
+    session = relationship("InterviewSession", back_populates="analysis_results")
+    created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
