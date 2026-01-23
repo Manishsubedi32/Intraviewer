@@ -73,8 +73,9 @@ class SessionService:
         
         try:
             while True:
-                data = await websocket.receive_text()
-    
+                data = await websocket.receive_json() # yesma recieve_json is needed as text won't work
+                print(type(data))        # <class 'dict'>
+                print(data)
                 # -------------------------------------------------------
                 if "bytes" in data: # used to check if binary data is present
                     audio_bytes = data["bytes"]
@@ -82,7 +83,7 @@ class SessionService:
                     # 1. Store Raw Audio Chunk
                     new_chunk = LiveChunksInput(
                         session_id=session_id,
-                        audio_chunk=audio_bytes, # Storing raw bytes is more efficient than Base64
+                        audio_chunk=audio_bytes, #this is base64 encoded string
                         video_chunk=None
                     )
                     db.add(new_chunk)
