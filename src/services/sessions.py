@@ -1,10 +1,13 @@
 import base64
 import json
+import asyncio
+import traceback
 from fastapi import HTTPException, Depends, WebSocket, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from src import db
-from src.models.models import LiveChunksInput, SessionStatus, InterviewSession, User, Transcript, Questions,AnalysisResult
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+from sqlalchemy import text
+from src.models.models import LiveChunksInput, SessionStatus, InterviewSession, User, Transcript, Questions, AnalysisResult
 from src.core.security import get_current_user
 from src.services.aiservices import AudioProcessor
 from starlette.websockets import WebSocketDisconnect, WebSocketState
@@ -31,7 +34,6 @@ class SessionService:
     async def complete_session(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
         user_id = get_current_user(token)
         
-        # Get the session and verify ownership
         session = db.query(InterviewSession).filter(
             InterviewSession.id == session_id,
             InterviewSession.user_id == user_id
@@ -43,7 +45,6 @@ class SessionService:
                 detail="Session not found or you don't have permission"
             )
         
-        # Update session status to completed
         session.status = SessionStatus.COMPLETED
         db.commit()
         db.refresh(session)
@@ -61,103 +62,203 @@ class SessionService:
         session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
         
         if not session:
+            print(f"❌ Session {session_id} not found")
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
-        # it only owkrs when session is ongoing
         if session.status != SessionStatus.ONGOING:
+            print(f"❌ Session {session_id} is not ONGOING (status: {session.status})")
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
+        print(f"✅ Session {session_id} found and ONGOING")
         processor = AudioProcessor()
+        chunk_count = 0
         
         try:
             while True:
-                data = await websocket.receive_json() # yesma recieve_json is needed as text won't work
-                print(type(data))        # <class 'dict'>
-                print(data)
+                try:
+                    data = await websocket.receive_json()
+                    print(f"📩 Received: {type(data)} - Keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
+                except Exception as e:
+                    print(f"❌ JSON receive error: {e}")
+                    continue
+
                 # -------------------------------------------------------
-                if "bytes" in data: # used to check if binary data is present
-                    audio_bytes = data["bytes"]
+                # Handle messages with "type" and "data" keys
+                # This is the format your client is sending!
+                # -------------------------------------------------------
+                if "type" in data:
+                    msg_type = data.get("type")
+                    msg_data = data.get("data")
                     
-                    # 1. Store Raw Audio Chunk
-                    new_chunk = LiveChunksInput(
-                        session_id=session_id,
-                        audio_chunk=audio_bytes, #this is base64 encoded string
-                        video_chunk=None
-                    )
-                    db.add(new_chunk)
-                    db.commit()
+                    print(f"📨 Message type: {msg_type}")
 
-                    # 2. Process Audio
-                    transcription = await processor.process_audio(audio_bytes)
-                    
-                    if transcription and len(transcription.strip()) > 0:
-                        new_transcript = Transcript(
-                            session_id=session_id,
-                            user_response=transcription,
-                            is_ai_response=False
-                        )
-                        db.add(new_transcript)
-                        db.commit()
-                        
-                        await websocket.send_text(f"Transcription: {transcription}")
+                    # ----- AUDIO DATA -----
+                    if msg_type == "audio":
+                        try:
+                            audio_bytes = base64.b64decode(msg_data)
+                            print(f"✅ Decoded audio: {len(audio_bytes)} bytes")
+                        except Exception as e:
+                            print(f"❌ Base64 Decode Error: {e}")
+                            await websocket.send_json({"error": f"Base64 decode failed: {str(e)}"})
+                            continue
 
-                # -------------------------------------------------------
-                # CASE 2: TEXT FRAME -> JSON (Video, Commands, Config)
-                # -------------------------------------------------------
-                elif "text" in data: # as we know video is sent as text frame in base64 inside json
-                    try:
-                        payload = json.loads(data["text"])
-                        msg_type = payload.get("type")
-                        data_content = payload.get("data")
+                        # Store audio chunk
+                        try:
+                            new_chunk = LiveChunksInput(
+                                session_id=session_id,
+                                audio_chunk=audio_bytes,
+                                video_chunk=None
+                            )
+                            db.add(new_chunk)
+                            db.flush()
+                            db.commit()
+                            db.refresh(new_chunk)
+                            chunk_count += 1
+                            print(f"✅ Audio chunk #{chunk_count} STORED with ID={new_chunk.id} ({len(audio_bytes)} bytes)")
+                            
+                        except Exception as e:
+                            db.rollback()
+                            print(f"❌ Database Error storing audio: {type(e).__name__}: {e}")
+                            print(f"❌ Traceback:\n{traceback.format_exc()}")
+                            continue
 
-                        if msg_type == "video":
-                            # Handle Video (sent as Base64 string inside JSON)
-                            video_bytes = base64.b64decode(data_content)
+                        # Process audio for transcription
+                        try:
+                            transcription = await processor.process_audio(audio_bytes)
+                            if transcription and len(transcription.strip()) > 0:
+                                new_transcript = Transcript(
+                                    session_id=session_id,
+                                    user_response=transcription,
+                                    is_ai_response=False
+                                )
+                                db.add(new_transcript)
+                                db.flush()
+                                db.commit()
+                                print(f"✅ Transcript STORED: {transcription[:80]}...")
+                                
+                                await websocket.send_json({
+                                    "type": "transcription",
+                                    "data": transcription,
+                                    "chunk_number": chunk_count
+                                })
+                        except Exception as e:
+                            db.rollback()
+                            print(f"❌ Transcription error: {e}")
+
+                    # ----- VIDEO DATA -----
+                    elif msg_type == "video":
+                        try:
+                            video_bytes = base64.b64decode(msg_data)
+                            print(f"✅ Decoded video: {len(video_bytes)} bytes")
+                            
                             new_chunk = LiveChunksInput(
                                 session_id=session_id,
                                 audio_chunk=None,
                                 video_chunk=video_bytes
                             )
                             db.add(new_chunk)
+                            db.flush()
                             db.commit()
+                            db.refresh(new_chunk)
+                            chunk_count += 1
+                            print(f"✅ Video chunk #{chunk_count} STORED with ID={new_chunk.id}")
+                            
+                        except Exception as e:
+                            db.rollback()
+                            print(f"❌ Video storage error: {e}")
+                            print(f"❌ Traceback:\n{traceback.format_exc()}")
+
+                    # ----- SESSION COMPLETE -----
+                    elif msg_type == "session_complete" or msg_type == "end_interview":
+                        print(f"🛑 Session Complete received. Total chunks: {chunk_count}")
                         
-                        elif msg_type == "end_interview":
-                            # Trigger your LLM analysis logic here
+                        # Flush remaining audio
+                        try:
+                            final_transcript = await processor.flush()
+                            if final_transcript and len(final_transcript.strip()) > 0:
+                                new_transcript = Transcript(
+                                    session_id=session_id,
+                                    user_response=final_transcript,
+                                    is_ai_response=False
+                                )
+                                db.add(new_transcript)
+                                db.flush()
+                                db.commit()
+                                print(f"✅ Final transcript STORED")
+                        except Exception as e:
+                            db.rollback()
+                            print(f"❌ Final flush error: {e}")
+
+                        # Mark session complete
+                        try:
                             session.status = SessionStatus.COMPLETED
                             db.commit()
+                            print(f"✅ Session COMPLETED")
+                        except Exception as e:
+                            db.rollback()
+                            print(f"❌ Session update error: {e}")
 
-                            await websocket.send_json({"type": "status", "data": "Interview Completed"})
-                            break
+                        await websocket.send_json({
+                            "type": "status",
+                            "data": "Interview Completed",
+                            "total_chunks": chunk_count
+                        })
+                        break
 
-                    except json.JSONDecodeError:
-                        print("Received invalid JSON text")
+                    else:
+                        print(f"⚠️ Unknown message type: {msg_type}")
+
+                # -------------------------------------------------------
+                # Legacy format: {"bytes": "..."} 
+                # -------------------------------------------------------
+                elif "bytes" in data:
+                    try:
+                        audio_bytes = base64.b64decode(data["bytes"])
+                        print(f"✅ Decoded audio (legacy): {len(audio_bytes)} bytes")
+                        
+                        new_chunk = LiveChunksInput(
+                            session_id=session_id,
+                            audio_chunk=audio_bytes,
+                            video_chunk=None
+                        )
+                        db.add(new_chunk)
+                        db.flush()
+                        db.commit()
+                        db.refresh(new_chunk)
+                        chunk_count += 1
+                        print(f"✅ Audio chunk #{chunk_count} STORED (legacy)")
+                        
+                    except Exception as e:
+                        db.rollback()
+                        print(f"❌ Legacy audio error: {e}")
+
+                else:
+                    print(f"⚠️ Unknown message format: {list(data.keys())}")
 
         except WebSocketDisconnect:
-            print(f"Client disconnected from session {session_id}")
-            # No need to close here, it's already disconnected
+            print(f"⚠️ Client disconnected from session {session_id}. Total chunks: {chunk_count}")
             
         except Exception as e:
-            print(f"WebSocket Error: {e}")
-            # Only close if still connected
+            print(f"❌ Critical error: {type(e).__name__}: {e}")
+            print(f"❌ Traceback:\n{traceback.format_exc()}")
             if websocket.client_state == WebSocketState.CONNECTED:
-                await websocket.close(code=1011) # Internal Error
+                try:
+                    await websocket.close(code=1011)
+                except RuntimeError:
+                    pass
                 
         finally:
-            # FIX: Check state before closing in finally block
             if websocket.client_state == WebSocketState.CONNECTED:
                 try:
                     await websocket.close()
                 except RuntimeError:
-                    # Ignore if it was already closed concurrently
                     pass
-    
+
     @staticmethod
     async def fetch_session_analysis(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
         user_id = get_current_user(token)
-    
-   
         session = db.query(InterviewSession).filter(
             InterviewSession.id == session_id, 
             InterviewSession.user_id == user_id
@@ -166,8 +267,6 @@ class SessionService:
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        
-        # hamle specific quesiton lai specific analysis garexainam
         analysis = db.query(AnalysisResult).filter(
             AnalysisResult.session_id == session_id
         ).first()
@@ -183,8 +282,6 @@ class SessionService:
     @staticmethod
     async def fetch_session_transcript(token: HTTPAuthorizationCredentials, db: Session, session_id:int):
         user_id = get_current_user(token)
-    
-   
         session = db.query(InterviewSession).filter(
             InterviewSession.id == session_id, 
             InterviewSession.user_id == user_id
@@ -193,8 +290,6 @@ class SessionService:
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        
-        # hamle specific quesiton lai specific transcript garexainam
         transcripts = db.query(Transcript).filter(
             Transcript.session_id == session_id
         ).order_by(Transcript.created_at).all()
@@ -230,7 +325,6 @@ class SessionService:
             ]
         }
     
-    #session termination
     @staticmethod
     async def terminate_session(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
         user_id = get_current_user(token)

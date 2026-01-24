@@ -1,4 +1,3 @@
-
 from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, LargeBinary, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql.expression import text
@@ -60,6 +59,7 @@ class InterviewSession(Base):
     questions = relationship("Questions", back_populates="session")
     transcripts = relationship("Transcript", back_populates="session")
     analysis_results = relationship("AnalysisResult", back_populates="session")
+    live_chunks = relationship("LiveChunksInput", back_populates="session")  # Add this line for the relationship
    
 class Cv(Base):
     __tablename__ = "cv_uploads"
@@ -76,13 +76,15 @@ class TextPrompts(Base):
     prompt_text = Column(String, unique=False, nullable = False)
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
 
-class LiveChunksInput(Base): # here we will store live audio chunks to send to whisper and live video to send to emotion detection model
+class LiveChunksInput(Base):
     __tablename__ = "live_chunks_input"
-    id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
+    id = Column(Integer, primary_key=True, unique=True, nullable=False, index=True)
     session_id = Column(Integer, ForeignKey("session.id", ondelete="CASCADE"), nullable=False)
-    audio_chunk:bytes = Column(String, unique=False, nullable = True) # storing audio chunk as bytes # might delete after the interview is over cause not required
-    video_chunk:bytes = Column(String, unique=False, nullable = True) # storing video chunk as bytes # sent to the emotion detection so can't delete
-    created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
+    audio_chunk = Column(LargeBinary, nullable=True)  # ✅ Changed from String to LargeBinary
+    video_chunk = Column(LargeBinary, nullable=True)  # ✅ Changed from String to LargeBinary
+    created_at = Column(TIMESTAMP(timezone="True"), server_default=text("NOW()"), nullable=False)
+    
+    session = relationship("InterviewSession", back_populates="live_chunks")
 
 class Transcript(Base): # now here our whisper sent user_response and ai_response to backend will be stored
     __tablename__ = "transcripts"

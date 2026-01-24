@@ -65,13 +65,24 @@ class AudioProcessor:
 
     async def process_audio(self, audio_chunk: bytes) -> str:
         self.buffer.append(audio_chunk)
-        if len(self.buffer) >= 15:
+        if len(self.buffer) >= 1:
             full_audio = b''.join(self.buffer)
             self.buffer = [] 
             loop = asyncio.get_running_loop()
             text = await loop.run_in_executor(self.executor, self._transcribe_sync, full_audio)
             return text
         return ""
+
+    async def flush(self) -> str: # new function
+        """Process any remaining audio in the buffer."""
+        if not self.buffer:
+            return ""
+        print(f"🧹 Flushing {len(self.buffer)} remaining chunks...")
+        full_audio = b''.join(self.buffer)
+        self.buffer = []
+        loop = asyncio.get_running_loop()
+        text = await loop.run_in_executor(self.executor, self._transcribe_sync, full_audio)
+        return text
 
     def _transcribe_sync(self, audio_bytes: bytes) -> str:
         try:
