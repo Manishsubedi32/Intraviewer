@@ -23,21 +23,26 @@ class InputService:
         if cv_file:
             # Read file bytes (works for PDF, Image, etc.)
             cv_bytes = await cv_file.read()
+            print(f"print cv files that is recieved:{cv_file.filename}")
             # Extract text using the utility function
             try:
                 cv_extracted = extract_text_from_file(cv_bytes, cv_file.filename)
+                print(f"cv text extracted:{cv_extracted}")
+                print(f"cv text length:{len(cv_extracted)}")
             except Exception as e:
+                print(f"Error parsing CV file: {e}")
                 raise HTTPException(status_code=400, detail=f"Failed to parse CV file: {str(e)}")
         elif cv_text:
             cv_extracted = cv_text
             cv_bytes = cv_text.encode('utf-8') # Store text as bytes if no file provided
+            print(f"cv text provided directly:{cv_extracted}")
         else:
             raise HTTPException(status_code=400, detail="CV is required (file or text)")
 
         #just error handling for job_text
         if not job_text or not job_text.strip():
             raise HTTPException(status_code=400, detail="Job description is required")
-
+        print(f"job description text:{job_text}")
         return cv_extracted.strip(), job_text.strip(), cv_bytes
 
     @staticmethod
@@ -56,7 +61,7 @@ class InputService:
         cv_clean_text, job_clean_text, cv_raw_bytes = await InputService._parse_input_to_text(
             cv_file, cv_text,job_text
         )
-
+        print("checking cv text after parsing:",cv_clean_text)
         # 2. Save CV
         new_cv = Cv(
             user_id=user_id,
@@ -82,5 +87,8 @@ class InputService:
         return {
             "message": "Data stored successfully",
             "cv_id": new_cv.id,
-            "prompt_id": new_prompt.id
+            "prompt_id": new_prompt.id,
+            "cv_text_length": len(cv_clean_text),
+            "cv_text_preview": cv_clean_text[:200] if cv_clean_text else ""
+        
         }

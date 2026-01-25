@@ -102,13 +102,13 @@ class LLMService:
         loop = asyncio.get_running_loop()
         questions = await loop.run_in_executor(self.executor, self._generate_questions_sync, cv_text, job_description)
         unload_llm()
+        
         return questions
 
     def _generate_questions_sync(self, cv_text: str, job_description: str) -> list[str]:
         model = load_llm()
         if model is None:
             return ["Error: AI Model failed to load."]
-
         try:
             # Phi-3 Prompt Format
             prompt = f"""<|user|>

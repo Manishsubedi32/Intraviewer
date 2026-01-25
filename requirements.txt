@@ -14,6 +14,7 @@ cors==1.0.1
 cryptography==46.0.3
 ctranslate2==4.6.2
 Deprecated==1.3.1
+diskcache==5.6.3
 dnspython==2.8.0
 ecdsa==0.19.1
 email-validator==2.3.0
@@ -34,14 +35,19 @@ huggingface_hub==1.2.3
 humanfriendly==10.0
 idna==3.11
 iniconfig==2.3.0
+Jinja2==3.1.6
 limits==5.6.0
+llama_cpp_python==0.3.16
 lxml==6.0.2
+MarkupSafe==3.0.3
 mpmath==1.3.0
+networkx==3.6.1
 numpy==2.4.0
 onnxruntime==1.23.2
 packaging==25.0
 passlib==1.7.4
-pdfminer.six==20251107
+pdfminer.six==20251230
+pdfplumber==0.11.9
 pillow==12.0.0
 pluggy==1.6.0
 protobuf==6.33.2
@@ -52,6 +58,9 @@ pycparser==2.23
 pydantic==2.9.2
 pydantic-settings==2.12.0
 pydantic_core==2.23.4
+PyMuPDF==1.26.7
+PyPDF2==3.0.1
+pypdfium2==5.3.0
 PySocks==1.7.1
 pytesseract==0.3.13
 pytest==7.4.3
@@ -75,6 +84,7 @@ starlette==0.27.0
 sympy==1.14.0
 tldextract==5.3.0
 tokenizers==0.22.1
+torch==2.9.1
 tqdm==4.67.1
 typer-slim==0.21.0
 typing-inspection==0.4.2
@@ -88,5 +98,3 @@ wheel==0.45.1
 wrapt==2.0.1
 zope.event==6.1
 zope.interface==8.1.1
-torch
-llama-cpp-python
