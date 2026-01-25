@@ -25,13 +25,12 @@ def load_llm():
         try:
             print("🚀 Loading LLM Model (Phi-3 Mini)...")
             from llama_cpp import Llama
-            # Phi-3 Mini fits easily in 8GB RAM alongside Docker & macOS
             llm_model = Llama.from_pretrained(
                 repo_id="bartowski/Phi-3-mini-4k-instruct-GGUF",
                 filename="*Q4_K_M.gguf",
                 verbose=True,
                 n_ctx=4096,
-                n_gpu_layers=-1 # Uses Mac Metal GPU
+                n_gpu_layers=-1
             )
             print("✅ LLM Loaded.")
         except Exception as e:
@@ -53,7 +52,6 @@ def load_whisper():
     if whisper_model is None:
         unload_llm()
         print("🎤 Loading Whisper Model...")
-        # 'base' is fast on CPU. If you want higher accuracy, try 'small'
         whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
         print("✅ Whisper Loaded.")
     return whisper_model
@@ -67,13 +65,13 @@ class AudioProcessor:
         self.buffer.append(audio_chunk)
         if len(self.buffer) >= 1:
             full_audio = b''.join(self.buffer)
-            self.buffer = [] 
+            self.buffer = []
             loop = asyncio.get_running_loop()
             text = await loop.run_in_executor(self.executor, self._transcribe_sync, full_audio)
             return text
         return ""
 
-    async def flush(self) -> str: # new function
+    async def flush(self) -> str:
         """Process any remaining audio in the buffer."""
         if not self.buffer:
             return ""
@@ -98,20 +96,29 @@ class LLMService:
     def __init__(self):
         self.executor = ThreadPoolExecutor(max_workers=1)
 
-    async def generate_interview_questions(self, cv_text: str, job_description: str) -> list[str]:
+    async def generate_interview_questions(self, cv_text: str, job_description: str) -> list[dict]:
+        """
+        Generate interview questions WITH recommended answers.
+        Returns list of dicts: [{"question": "...", "recommended_answer": "..."}]
+        """
         loop = asyncio.get_running_loop()
-        questions = await loop.run_in_executor(self.executor, self._generate_questions_sync, cv_text, job_description)
+        questions_with_answers = await loop.run_in_executor(
+            self.executor,
+            self._generate_questions_with_answers_sync,
+            cv_text,
+            job_description
+        )
         unload_llm()
-        
-        return questions
+        return questions_with_answers
 
-    def _generate_questions_sync(self, cv_text: str, job_description: str) -> list[str]:
+    def _generate_questions_with_answers_sync(self, cv_text: str, job_description: str) -> list[dict]:
         model = load_llm()
         if model is None:
-            return ["Error: AI Model failed to load."]
+            return [{"question": "Error: AI Model failed to load.", "recommended_answer": ""}]
+
         try:
-            # Phi-3 Prompt Format
-            prompt = f"""<|user|>
+            # Step 1: Generate questions
+            questions_prompt = f"""<|user|>
 You are an expert HR Manager. Generate 10 interview questions based on the provided Context.
 Rules:
 1. 4 Technical, 3 Behavioral, 3 Situational.
@@ -119,23 +126,164 @@ Rules:
 
 CANDIDATE CV: {cv_text[:2000]}
 
-JOB CONTEXT: 
-{job_description[:3000]}
+JOB CONTEXT: {job_description[:2500]}
 <|end|>
 <|assistant|>"""
 
-            output = model(prompt, max_tokens=1024, stop=["<|end|>"], echo=False)
-            generated_text = output['choices'][0]['text'].strip()
-            
-            questions = []
-            for line in generated_text.split('\n'):
+            output = model(questions_prompt, max_tokens=1024, stop=["<|end|>"], echo=False)
+            questions_text = output['choices'][0]['text'].strip()
+
+            # Parse questions
+            questions_list = []
+            for line in questions_text.split('\n'):
                 clean_line = line.strip()
                 if re.match(r'^\d+\.', clean_line):
                     q_text = re.sub(r'^\d+\.\s*', '', clean_line)
-                    questions.append(q_text)
-            
-            return questions if questions else [generated_text]
+                    if q_text:
+                        questions_list.append(q_text)
+
+            if not questions_list:
+                questions_list = [questions_text] if questions_text else ["No questions generated"]
+
+            print(f"✅ Generated {len(questions_list)} questions, now generating recommended answers...")
+
+            # Step 2: Generate recommended answer for each question
+            questions_with_answers = []
+            for i, question in enumerate(questions_list):
+                print(f"📝 Generating answer for Q{i+1}/{len(questions_list)}...")
+
+                answer_prompt = f"""<|user|>
+You are an expert interview coach. Provide an ideal answer for this interview question.
+The answer should be:
+1. Concise (3-5 sentences)
+2. Professional and relevant to the candidate's background
+3. Include specific examples or achievements from the CV where relevant
+4. Use STAR method (Situation, Task, Action, Result) for behavioral questions
+
+CANDIDATE CV SUMMARY: {cv_text[:1500]}
+JOB CONTEXT: {job_description[:1000]}
+QUESTION: {question}
+
+Provide ONLY the recommended answer, no intro or labels.
+<|end|>
+<|assistant|>"""
+
+                try:
+                    answer_output = model(answer_prompt, max_tokens=350, stop=["<|end|>"], echo=False)
+                    recommended_answer = answer_output['choices'][0]['text'].strip()
+                    
+                    # Clean up the answer
+                    recommended_answer = re.sub(
+                        r'^(Answer:|Recommended Answer:|Ideal Answer:|Response:)\s*',
+                        '',
+                        recommended_answer,
+                        flags=re.IGNORECASE
+                    )
+                    print(f"   ✅ Answer generated ({len(recommended_answer)} chars)")
+
+                except Exception as e:
+                    print(f"   ⚠️ Error generating answer for Q{i+1}: {e}")
+                    recommended_answer = "Answer generation failed."
+
+                questions_with_answers.append({
+                    "question": question,
+                    "recommended_answer": recommended_answer
+                })
+
+            print(f"✅ Generated {len(questions_with_answers)} questions with recommended answers")
+            return questions_with_answers
 
         except Exception as e:
-            print(f"Error generating questions: {e}")
-            return ["Error generating questions."]
+            print(f"❌ Error generating questions: {e}")
+            return [{"question": "Error generating questions.", "recommended_answer": ""}]
+
+    async def evaluate_candidate_response( # don't need it for  now can be used later
+        self,
+        question: str,
+        recommended_answer: str,
+        candidate_response: str,
+        cv_text: str
+    ) -> dict:
+        """
+        Evaluate candidate's response against the recommended answer.
+        Returns: {"score": 0-100, "feedback": "...", "strengths": [...], "improvements": [...]}
+        """
+        loop = asyncio.get_running_loop()
+        evaluation = await loop.run_in_executor(
+            self.executor,
+            self._evaluate_response_sync,
+            question,
+            recommended_answer,
+            candidate_response,
+            cv_text
+        )
+        return evaluation
+
+    def _evaluate_response_sync(
+        self,
+        question: str,
+        recommended_answer: str,
+        candidate_response: str,
+        cv_text: str
+    ) -> dict:
+        model = load_llm()
+        if model is None:
+            return {"score": 0, "feedback": "AI Model failed to load.", "strengths": [], "improvements": []}
+
+        try:
+            prompt = f"""<|user|>
+You are an expert interview evaluator. Compare the candidate's response with the ideal answer.
+
+QUESTION: {question}
+
+IDEAL ANSWER: {recommended_answer}
+
+CANDIDATE'S RESPONSE: {candidate_response}
+
+CANDIDATE BACKGROUND: {cv_text[:800]}
+
+Evaluate and respond in this EXACT format (no other text):
+SCORE: [number 0-100]
+FEEDBACK: [2-3 sentences of constructive feedback]
+STRENGTHS: [comma-separated list of what was done well]
+IMPROVEMENTS: [comma-separated list of areas to improve]
+<|end|>
+<|assistant|>"""
+
+            output = model(prompt, max_tokens=400, stop=["<|end|>"], echo=False)
+            eval_text = output['choices'][0]['text'].strip()
+
+            # Parse evaluation
+            score = 50
+            feedback = "Evaluation completed."
+            strengths = []
+            improvements = []
+
+            for line in eval_text.split('\n'):
+                line = line.strip()
+                if line.upper().startswith('SCORE:'):
+                    try:
+                        score_match = re.search(r'\d+', line)
+                        if score_match:
+                            score = min(100, max(0, int(score_match.group())))
+                    except:
+                        pass
+                elif line.upper().startswith('FEEDBACK:'):
+                    feedback = line.split(':', 1)[1].strip() if ':' in line else feedback
+                elif line.upper().startswith('STRENGTHS:'):
+                    strengths_str = line.split(':', 1)[1].strip() if ':' in line else ""
+                    strengths = [s.strip() for s in strengths_str.split(',') if s.strip()]
+                elif line.upper().startswith('IMPROVEMENTS:'):
+                    improvements_str = line.split(':', 1)[1].strip() if ':' in line else ""
+                    improvements = [i.strip() for i in improvements_str.split(',') if i.strip()]
+
+            return {
+                "score": score,
+                "feedback": feedback,
+                "strengths": strengths,
+                "improvements": improvements
+            }
+
+        except Exception as e:
+            print(f"❌ Error evaluating response: {e}")
+            return {"score": 0, "feedback": f"Evaluation error: {e}", "strengths": [], "improvements": []}

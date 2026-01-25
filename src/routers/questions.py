@@ -46,3 +46,18 @@ async def generate_session_questions(
         "count": len(questions),
         "questions": questions
     }
+
+@router.get("/session/{session_id}", status_code=status.HTTP_200_OK)
+async def get_questions_with_answers(
+    session_id: int,
+    db: Session = Depends(get_db),
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme)
+):
+    """
+    Fetches all questions along with their recommended answers for a given session.
+    """
+    questions = await QuestionsService.get_questions_by_session(db=db, session_id=session_id)
+    if not questions:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No questions found for this session")
+    
+    return questions

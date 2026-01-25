@@ -16,20 +16,19 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
         raise ValueError("Empty file provided")
     
     filename_lower = filename.lower()
-    
-    # ---- PDF FILES ----
+
     if filename_lower.endswith('.pdf'):
         return _extract_from_pdf(file_bytes)
     
-    # ---- WORD DOCUMENTS ----
+
     elif filename_lower.endswith('.docx'):
         return _extract_from_docx(file_bytes)
     
-    # ---- PLAIN TEXT ----
+
     elif filename_lower.endswith('.txt'):
         return _extract_from_txt(file_bytes)
     
-    # ---- IMAGES (OCR) ----
+
     elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff')):
         return _extract_from_image(file_bytes)
     
@@ -41,7 +40,7 @@ def _extract_from_pdf(file_bytes: bytes) -> str:
     """Extract text from PDF using PyPDF2 or pdfplumber."""
     text = ""
     
-    # Try PyPDF2 first
+
     try:
         import PyPDF2
         pdf_file = io.BytesIO(file_bytes)
@@ -79,7 +78,7 @@ def _extract_from_pdf(file_bytes: bytes) -> str:
     except Exception as e:
         print(f"⚠️ pdfplumber failed: {e}")
     
-    # Fallback to pymupdf (fitz)
+
     try:
         import fitz  # PyMuPDF
         pdf_file = io.BytesIO(file_bytes)

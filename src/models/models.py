@@ -45,6 +45,7 @@ class Questions(Base):
     order = Column(Integer)
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
     session = relationship("InterviewSession", back_populates="questions")
+    recommended_answer = Column(Text, unique=False, nullable = True) # New column for recommended answer
     
 class InterviewSession(Base):
     __tablename__ = "session"
