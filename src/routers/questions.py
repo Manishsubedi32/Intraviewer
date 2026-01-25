@@ -28,36 +28,35 @@ async def add_question(
 
 
 @router.post("/generate/{session_id}", status_code=status.HTTP_201_CREATED)
-async def generate_session_questions(
+async def generate_questions(
     session_id: int,
-   db: Session = Depends(get_db),
-   token: HTTPAuthorizationCredentials = Depends(auth_scheme)
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme),
+    db: Session = Depends(get_db)
 ):
-    """
-    Triggers AI to generate questions for a specific session and saves them.
-    """
-    questions = await QuestionsService.generate_and_save_questions(
-        db=db,
-        session_id=session_id,
-    )
-    
+    """Generate interview questions with AI-recommended answers for a session."""
+    questions = await QuestionsService.generate_and_save_questions(db, session_id)
     return {
-        "message": "Questions generated successfully",
-        "count": len(questions),
+        "message": "Questions generated successfully with recommended answers",
+        "session_id": session_id,
+        "total_questions": len(questions),
         "questions": questions
     }
 
 @router.get("/session/{session_id}", status_code=status.HTTP_200_OK)
+async def get_session_questions(
+    session_id: int,
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme),
+    db: Session = Depends(get_db)
+):
+    """Get all questions for a session (without auth - for interview display)."""
+    questions = await QuestionsService.get_questions_by_session(db, session_id)
+    return questions
+
+@router.get("/session/{session_id}/with-answers", status_code=status.HTTP_200_OK)
 async def get_questions_with_answers(
     session_id: int,
-    db: Session = Depends(get_db),
-    token: HTTPAuthorizationCredentials = Depends(auth_scheme)
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme),
+    db: Session = Depends(get_db)
 ):
-    """
-    Fetches all questions along with their recommended answers for a given session.
-    """
-    questions = await QuestionsService.get_questions_by_session(db=db, session_id=session_id)
-    if not questions:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No questions found for this session")
-    
-    return questions
+    """Get questions with recommended answers (requires auth)."""
+    return await QuestionsService.get_questions_with_answers(token, db, session_id)

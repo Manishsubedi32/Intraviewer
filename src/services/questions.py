@@ -2,6 +2,7 @@ from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from src.models.models import Questions, User, InterviewSession, Cv, TextPrompts
+from src.routers import questions
 from src.schemas.auth import QuestionBase
 from src.core.security import get_current_user, auth_scheme
 from src.services.aiservices import LLMService
@@ -106,12 +107,26 @@ class QuestionsService:
         return saved_questions
 
     @staticmethod
-    async def get_questions_by_session(db: Session, session_id: int): # it is not used in api 
-        """Get all questions for a session."""
-        return db.query(Questions).filter(Questions.session_id == session_id).order_by(Questions.order).all()
+    async def get_questions_by_session(db: Session, session_id: int): 
+        """Get all questions for a session (without recommended answers)."""
+        questions = db.query(Questions).filter(
+            Questions.session_id == session_id
+        ).order_by(Questions.order).all()
+        
+        # Return only the fields you want (excluding recommended_answer)
+        return [
+            {
+                "id": q.id,
+                "session_id": q.session_id,
+                "question_text": q.question_text,
+                "difficulty_level": q.difficulty_level.value if q.difficulty_level else None,
+                "order": q.order,
+                "created_at": q.created_at
+            } for q in questions
+        ]
 
     @staticmethod
-    async def get_questions_with_answers(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
+    async def get_questions_with_answers(token: HTTPAuthorizationCredentials, db: Session, session_id: int): 
         """Get questions with their recommended answers for a session."""
         user_id = get_current_user(token)
 
