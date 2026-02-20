@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
 from faster_whisper import WhisperModel
 import torch
-from transformers import AutoModelForImageTextToText, AutoProcessor
+from transformers import pipeline
 
 # --- MEMORY MANAGEMENT ---
 whisper_model = None
@@ -56,7 +56,6 @@ def load_whisper():
     global whisper_model
     if whisper_model is None:
         unload_llm()
-        unload_emotion()
         print("🎤 Loading Whisper Model...")
         whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
         print("✅ Whisper Loaded.")
@@ -77,30 +76,16 @@ def load_emotion():
     global emotion_resources
     if emotion_resources is None:
         unload_llm()
-        unload_whisper()
         try:
-            print("⏳ Loading Emotion AI from Hugging Face...")
-            model_id = "manis32/emotion_detection_intraviewer"
-            base_repo = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
+            print("⏳ Loading Emotion AI (dima806/facial_emotions_image_detection)...")
             device = "mps" if torch.backends.mps.is_available() else "cpu"
-
-            print(f"   ...Downloading model from {model_id}")
-            model = AutoModelForImageTextToText.from_pretrained(
-                model_id,
-                torch_dtype=torch.float16, 
-                _attn_implementation="eager"
-            )
-            model.to(device)
-            model.eval()
-
-            print(f"   ...Downloading processor from {base_repo}")
-            processor = AutoProcessor.from_pretrained(
-                base_repo, 
-                trust_remote_code=True
-            )
             
-            emotion_resources = {"model": model, "processor": processor, "device": device}
-            print("✅ Emotion AI Ready!")
+            # Using dima806 classification model for speed on 8GB RAM
+            model_id = "dima806/facial_emotions_image_detection"
+            classifier = pipeline("image-classification", model=model_id, device=device)
+            
+            emotion_resources = classifier
+            print(f"✅ Emotion AI (ViT) Ready! (using {device})")
         except Exception as e:
              print(f"⚠️ Emotion AI Load Failed: {e}")
              return None
@@ -341,55 +326,42 @@ IMPROVEMENTS: [comma-separated list of areas to improve]
 
 class EmotionDetector:
     def __init__(self):
-        self.resources = load_emotion()
+        # We don't load here to save RAM; we load on the first call to analyze
+        print("EmotionDetector initialized (lazy load mode)")
 
     def analyze(self, image_input: Image.Image):
-        if not self.resources:
-            return {"error": "Emotion model not loaded"}
+        """
+        Input: Image or bytes
+        Output: Top emotion classification result
+        """
+        classifier = load_emotion()
+        if not classifier:
+            return {"error": "Classifier not available"}
 
-        model = self.resources["model"]
-        processor = self.resources["processor"]
-        device = self.resources["device"]
-
-        # 1. Prepare Prompt
+        # 1. Prepare image
         if isinstance(image_input, bytes):
             image = Image.open(io.BytesIO(image_input))
         else:
             image = image_input
-            
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": image},
-                    {"type": "text", "text": "Analyze the person's face and determine their primary emotion. Return valid JSON."}
-                ]
-            }
-        ]
-        
-        # 2. Process
+
+        # 2. Run Classification
         try:
-            inputs = processor.apply_chat_template(
-                messages, 
-                add_generation_prompt=True, 
-                tokenize=True, 
-                return_dict=True, 
-                return_tensors="pt"
-            ).to(device)
+            results = classifier(image) # Returns list of label/score dicts
             
-            # 3. Generate
-            with torch.no_grad():
-                generated_ids = model.generate(**inputs, max_new_tokens=200)
-                output_text = processor.decode(generated_ids[0], skip_special_tokens=True)
-                
-            # 4. Extract JSON
-            json_match = re.search(r"\{.*\}", output_text, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group(0))
-            else:
-                return {"error": "No JSON found", "raw": output_text}
+            # Formulate response to match previous expected format if needed
+            # We return the whole list or just top result
+            top_result = results[0] # {label: 'sad', score: 0.99}
+            
+            # To maintain compatibility with user expectations of JSON/Labels
+            print(f"✅ Emotion Detected: {top_result['label']} (score: {top_result['score']:.4f})")
+            return {
+                "label": top_result["label"],
+                "score": float(top_result["score"]),
+                "all_emotions": results # Just in case we need context
+            }
                 
         except Exception as e:
+            print(f"❌ Emotion Prediction Failed: {e}")
             return {"error": str(e)}
 
 # --- TEST IT ---
@@ -399,7 +371,7 @@ if __name__ == "__main__":
         detector = EmotionDetector()
         
         # 2. Load Local Image
-        img_path = "diff.jpg"
+        img_path = "/Users/manishsubedi/Documents/coding/Intraviewer/backend/happy.jpg"
         print(f"📸 Loading local image: {img_path}")
         img = Image.open(img_path)
         

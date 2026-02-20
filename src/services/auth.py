@@ -22,15 +22,29 @@ class AuthService:
 
     @staticmethod
     async def signup(db: Session, user: Signup):
+        print(f"--- Processing signup for email: {user.email} ---")
         hashed_password = get_password_hash(user.password)
         user.password = hashed_password
-        if db.query(User).filter(User.email == user.email).first():
+        
+        # Check if user already exists
+        existing_user = db.query(User).filter(User.email == user.email).first()
+        if existing_user:
+            print(f"!!! Signup failed: Email {user.email} already exists !!!")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
-        db_user = User(id=None, **user.model_dump())
-        db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
-        return ResponseHandler.create_success(db_user.email, db_user.id, db_user)
+        
+        try:
+            # Remove id=None to let SQL handle autoincrement
+            user_data = user.model_dump()
+            db_user = User(**user_data)
+            db.add(db_user)
+            db.commit()
+            db.refresh(db_user)
+            print(f"--- Signup successful for {user.email} (ID: {db_user.id}) ---")
+            return ResponseHandler.create_success(db_user.email, db_user.id, db_user)
+        except Exception as e:
+            print(f"!!! CRITICAL ERROR during signup: {str(e)} !!!")
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     @staticmethod
     async def get_refresh_token(token, db):

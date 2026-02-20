@@ -7,9 +7,9 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy import text
-from src.models.models import LiveChunksInput, SessionStatus, InterviewSession, User, Transcript, Questions, AnalysisResult
+from src.models.models import LiveChunksInput, SessionStatus, InterviewSession, User, Transcript, Questions, AnalysisResult , EmotionAnalysis
 from src.core.security import get_current_user
-from src.services.aiservices import AudioProcessor
+from src.services.aiservices import AudioProcessor, EmotionDetector
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 class SessionService:
@@ -73,6 +73,7 @@ class SessionService:
 
         print(f"✅ Session {session_id} found and ONGOING")
         processor = AudioProcessor()
+        # emotion_detector = EmotionDetector() # ⚡ MOVED to end of session
         chunk_count = 0
         
         try:
@@ -97,6 +98,7 @@ class SessionService:
                     # ----- AUDIO DATA -----
                     if msg_type == "audio":
                         try:
+                            
                             audio_bytes = base64.b64decode(msg_data)
                             print(f"✅ Decoded audio: {len(audio_bytes)} bytes")
                         except Exception as e:
@@ -109,7 +111,7 @@ class SessionService:
                             new_chunk = LiveChunksInput(
                                 session_id=session_id,
                                 audio_chunk=audio_bytes,
-                                video_chunk=None
+                                video_chunk=None,
                             )
                             db.add(new_chunk)
                             db.flush()
@@ -126,12 +128,14 @@ class SessionService:
 
                         # Process audio for transcription
                         try:
+                            question_id = data.get("question_number", None)
                             transcription = await processor.process_audio(audio_bytes)
                             if transcription and len(transcription.strip()) > 0:
                                 new_transcript = Transcript(
                                     session_id=session_id,
                                     user_response=transcription,
-                                    is_ai_response=False
+                                    is_ai_response=False,
+                                    question_id=question_id
                                 )
                                 db.add(new_transcript)
                                 db.flush()
@@ -170,26 +174,95 @@ class SessionService:
                             print(f"❌ Video storage error: {e}")
                             print(f"❌ Traceback:\n{traceback.format_exc()}")
 
+                        # sending back live analysed frame to frontend
+                        try:
+                            emotion_detector = EmotionDetector() 
+                            analysis_result = emotion_detector.analyze(video_bytes)
+                            await websocket.send_json({
+                                "type": "live_emotion_analysis",
+                                "data": analysis_result,
+                                "chunk_number": chunk_count
+                            })
+                        except Exception as e:
+                            print(f"❌ Live emotion analysis error: {e}")
+                            print(f"❌ Traceback:\n{traceback.format_exc()}")
+
                     # ----- SESSION COMPLETE -----
                     elif msg_type == "session_complete" or msg_type == "end_interview":
                         print(f"🛑 Session Complete received. Total chunks: {chunk_count}")
-                        
-                        # Flush remaining audio
+                        # Update session status to COMPLETED
+                        session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
+                        if session:
+                            session.status = SessionStatus.COMPLETED
+                            db.commit()
+                            print(f"✅ Session {session_id} marked as COMPLETED")
+
+                        # ------------------------------------------------------------------
+                        # ⚡ POST-PROCESSING: ANALYZE VIDEO FRAMES NOW
+                        # ------------------------------------------------------------------
                         try:
-                            final_transcript = await processor.flush()
-                            if final_transcript and len(final_transcript.strip()) > 0:
-                                new_transcript = Transcript(
+                            print("⏳ Starting Post-Session Emotion Analysis...")
+                            
+                            # Try to tell client we are starting, but ignore if they left
+                            try:
+                                await websocket.send_json({"type": "status", "data": "Processing video analysis..."})
+                            except Exception:
+                                print("⚠️ Client disconnected, continuing analysis in background...")
+
+                            # 1. Load Detector 
+                            emotion_detector = EmotionDetector() 
+                            
+                            # 2. Fetch all video frames for this session
+                            video_chunks = db.query(LiveChunksInput).filter(
+                                LiveChunksInput.session_id == session_id,
+                                LiveChunksInput.video_chunk != None
+                            ).order_by(LiveChunksInput.id).all()
+                            
+                            print(f"   🎥 Found {len(video_chunks)} frames to analyze.")
+                            
+                            results = []
+                            for i, chunk in enumerate(video_chunks):
+                                if chunk.video_chunk:
+                                    # Analyze individual frame
+                                    analysis = emotion_detector.analyze(chunk.video_chunk)
+                                    results.append(analysis)
+                                    
+                                    # Try to send progress, but don't crash if failed
+                                    try:
+                                        if i % 5 == 0:
+                                            await websocket.send_json({
+                                                "type": "status", 
+                                                "data": f"Analyzed frame {i+1}/{len(video_chunks)}"
+                                            })
+                                    except Exception:
+                                        pass # Client is gone, that's fine
+
+                            # 3. Store Results to DB (CRITICAL STEP)
+                            # You need to save 'results' into the 'InterviewSession' or 'AnalysisResult' table here!
+                            # Currently your code just prints it and tries to send it.
+
+                            for result in results:
+                                emotion_analysis = EmotionAnalysis(
                                     session_id=session_id,
-                                    user_response=final_transcript,
-                                    is_ai_response=False
+                                    emotion_label=result['label'],
+                                    emotion_score=str(result['score'])
                                 )
-                                db.add(new_transcript)
-                                db.flush()
-                                db.commit()
-                                print(f"✅ Final transcript STORED")
+                                db.add(emotion_analysis)
+                            
+                            db.commit()
+                            
+                            print(f"✅ Emotion Analysis Complete. Processed {len(results)} frames.")
+                            
+                            # Final attempt to send
+                            try:
+                                await websocket.send_json({"type": "analysis_complete", "data": results})
+                            except Exception:
+                                pass
+
                         except Exception as e:
-                            db.rollback()
-                            print(f"❌ Final flush error: {e}")
+                            print(f"❌ Post-processing error: {e}")
+                            traceback.print_exc()
+                        # ------------------------------------------------------------------
 
                         # Mark session complete
                         try:

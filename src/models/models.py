@@ -60,6 +60,7 @@ class InterviewSession(Base):
     questions = relationship("Questions", back_populates="session")
     transcripts = relationship("Transcript", back_populates="session")
     analysis_results = relationship("AnalysisResult", back_populates="session")
+    emotion_analysis = relationship("EmotionAnalysis", back_populates="session")
     live_chunks = relationship("LiveChunksInput", back_populates="session")  # Add this line for the relationship
    
 class Cv(Base):
@@ -94,8 +95,18 @@ class Transcript(Base): # now here our whisper sent user_response and ai_respons
     is_ai_response = Column(Boolean, unique=False, nullable = False,default=False) # to identify if the transcript is from ai or user
     ai_response = Column(String, unique=False, nullable = True)
     user_response = Column(String, unique=False, nullable = True)
+    question_id = Column(Integer, ForeignKey("questions.id", ondelete="SET NULL"), nullable=True) # to link transcript with question if possible
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
     session = relationship("InterviewSession", back_populates="transcripts") # this allows us to access session from transcript and vice versa eg my_transcript.session.user_id
+
+class EmotionAnalysis(Base):
+    __tablename__ = "emotion_analysis"
+    id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
+    session_id = Column(Integer, ForeignKey("session.id", ondelete="CASCADE"), nullable=False)
+    emotion_label = Column(String, unique=False, nullable = False)
+    emotion_score = Column(String, unique=False, nullable = False)
+    created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
+    session = relationship("InterviewSession", back_populates="emotion_analysis")
 
 class AnalysisResult(Base): # storing analysis result from ai after the session is completed
     __tablename__ = "analysis_results"

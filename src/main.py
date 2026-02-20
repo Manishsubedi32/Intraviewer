@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from src.db.database import get_db, test_database_connection, engine, Base
 from fastapi.middleware.cors import CORSMiddleware
-from src.routers import auth, users, questions, userinput,sessions
+from src.routers import auth, users, questions, userinput, sessions
+from src.models import models # Ensure all models are loaded for create_all
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, UploadFile, File
