@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy import text
 from src.models.models import LiveChunksInput, SessionStatus, InterviewSession, User, Transcript, Questions, AnalysisResult , EmotionAnalysis
 from src.core.security import get_current_user
-from src.services.aiservices import AudioProcessor, EmotionDetector
+from src.services.aiservices import AudioProcessor, EmotionDetector,unload_whisper,unload_emotion
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 class SessionService:
@@ -192,6 +192,7 @@ class SessionService:
                         print(f"🛑 Session Complete received. Total chunks: {chunk_count}")
                         # Update session status to COMPLETED
                         session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
+                        print("unloading whisper",unload_whisper())
                         if session:
                             session.status = SessionStatus.COMPLETED
                             db.commit()
@@ -210,6 +211,7 @@ class SessionService:
                                 print("⚠️ Client disconnected, continuing analysis in background...")
 
                             # 1. Load Detector 
+                        
                             emotion_detector = EmotionDetector() 
                             
                             # 2. Fetch all video frames for this session
@@ -251,7 +253,9 @@ class SessionService:
                             
                             db.commit()
                             
+                            
                             print(f"✅ Emotion Analysis Complete. Processed {len(results)} frames.")
+                            unload_emotion()
                             
                             # Final attempt to send
                             try:
