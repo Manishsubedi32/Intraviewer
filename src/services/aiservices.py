@@ -56,6 +56,8 @@ def load_whisper():
     global whisper_model
     if whisper_model is None:
         unload_llm()
+
+
         print("🎤 Loading Whisper Model...")
         whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
         print("✅ Whisper Loaded.")
@@ -131,6 +133,7 @@ class AudioProcessor:
 class LLMService:
     def __init__(self):
         self.executor = ThreadPoolExecutor(max_workers=1)
+        self.model = None
 
     async def generate_interview_questions(self, cv_text: str, job_description: str) -> list[dict]:
         """
@@ -232,9 +235,19 @@ Provide ONLY the recommended answer, no intro or labels.
         except Exception as e:
             print(f"❌ Error generating questions: {e}")
             return [{"question": "Error generating questions.", "recommended_answer": ""}]
+   
+    def install_model (self,instruction):
+        """Utility function to pre-install models to avoid latency during actual use."""
+        if instruction == "llm":
+            print("🚀 Pre-installing models...")
+            self.model =load_llm()
+        elif instruction == "unload":
+            unload_llm()
+        print("✅ All models pre-installed and ready!")
 
     async def evaluate_candidate_response( # don't need it for  now can be used later
         self,
+        q_id:int,
         question: str,
         recommended_answer: str,
         candidate_response: str,
@@ -248,6 +261,7 @@ Provide ONLY the recommended answer, no intro or labels.
         evaluation = await loop.run_in_executor(
             self.executor,
             self._evaluate_response_sync,
+            q_id,
             question,
             recommended_answer,
             candidate_response,
@@ -257,13 +271,15 @@ Provide ONLY the recommended answer, no intro or labels.
 
     def _evaluate_response_sync(
         self,
+        q_id:int,
         question: str,
         recommended_answer: str,
         candidate_response: str,
         cv_text: str
     ) -> dict:
-        model = load_llm()
-        if model is None:
+        #model = load_llm() # bottle neck is here, we can optimize by keeping the model loaded and reusing it for multiple evaluations instead of loading/unloading every time
+                #this can be done by loading llm from session.py before calling evaluate but will loading the llm in session.py work for this file?
+        if self.model is None:
             return {"score": 0, "feedback": "AI Model failed to load.", "strengths": [], "improvements": []}
 
         try:
@@ -286,7 +302,7 @@ IMPROVEMENTS: [comma-separated list of areas to improve]
 <|end|>
 <|assistant|>"""
 
-            output = model(prompt, max_tokens=400, stop=["<|end|>"], echo=False)
+            output = self.model(prompt, max_tokens=400, stop=["<|end|>"], echo=False)
             eval_text = output['choices'][0]['text'].strip()
 
             # Parse evaluation
@@ -314,6 +330,7 @@ IMPROVEMENTS: [comma-separated list of areas to improve]
                     improvements = [i.strip() for i in improvements_str.split(',') if i.strip()]
 
             return {
+                "question_id": q_id ,
                 "score": score,
                 "feedback": feedback,
                 "strengths": strengths,
@@ -323,6 +340,47 @@ IMPROVEMENTS: [comma-separated list of areas to improve]
         except Exception as e:
             print(f"❌ Error evaluating response: {e}")
             return {"score": 0, "feedback": f"Evaluation error: {e}", "strengths": [], "improvements": []}
+
+    def evaluate_emotion(self, emotion_label: list, confidence_score:list):
+        if self.model is None:
+            return {"error": "AI Model failed to load."}
+        try:
+            prompt = f"""<|user|>
+You are an expert interview coach. Evaluate the candidate's emotional state during the interview based on the detected emotion and confidence score.
+EMOTION LABEL: {emotion_label}
+CONFIDENCE SCORE: {confidence_score}
+Provide feedback on how this emotional state might be perceived by interviewers and any recommendations for improvement and respond in this EXACT format (no other text):
+PERCEPTION: [2-3 sentences on how this emotion might be perceived]
+RECOMMENDATIONS: [2-3 actionable recommendations for the candidate to manage their emotions better]
+CONFIDENCE: [Your confidence in this analysis, 0-100%]
+<|end|>
+<|assistant|>"""
+            
+            output = self.model(prompt, max_tokens=300, stop=["<|end|>"], echo=False)
+            analysis_text = output['choices'][0]['text'].strip()
+
+            perception = "Analysis completed."
+            recommendations = []
+            confidence = "N/A"
+
+            for line in analysis_text.split('\n'):
+                line = line.strip()
+                if line.upper().startswith('PERCEPTION:'):
+                    perception = line.split(':', 1)[1].strip() if ':' in line else perception
+                elif line.upper().startswith('RECOMMENDATIONS:'):
+                    recommendations_str = line.split(':', 1)[1].strip() if ':' in line else ""
+                    recommendations = [r.strip() for r in recommendations_str.split(',') if r.strip()]
+                elif line.upper().startswith('CONFIDENCE:'):
+                    confidence = line.split(':', 1)[1].strip() if ':' in line else confidence
+            return {
+                "perception": perception,
+                "recommendations": recommendations,
+                "confidence": confidence
+            }
+        except Exception as e:
+            print(f"❌ Error evaluating emotion: {e}")
+            return {"error": f"Emotion evaluation error: {e}"}
+        
 
 class EmotionDetector:
     def __init__(self):

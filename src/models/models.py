@@ -59,10 +59,10 @@ class InterviewSession(Base):
 
     questions = relationship("Questions", back_populates="session")
     transcripts = relationship("Transcript", back_populates="session")
-    analysis_results = relationship("AnalysisResult", back_populates="session")
     emotion_analysis = relationship("EmotionAnalysis", back_populates="session")
+    emotion_result = relationship("Emotion_result", back_populates="session", uselist=False)
     live_chunks = relationship("LiveChunksInput", back_populates="session")  # Add this line for the relationship
-   
+    cv = relationship("Cv", backref="session_cv", uselist=False) # to access cv from session like my_session.Cv
 class Cv(Base):
     __tablename__ = "cv_uploads"
     id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
@@ -98,8 +98,9 @@ class Transcript(Base): # now here our whisper sent user_response and ai_respons
     question_id = Column(Integer, ForeignKey("questions.id", ondelete="SET NULL"), nullable=True) # to link transcript with question if possible
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
     session = relationship("InterviewSession", back_populates="transcripts") # this allows us to access session from transcript and vice versa eg my_transcript.session.user_id
-
-class EmotionAnalysis(Base):
+    question = relationship("Questions") # this allows us to access question from transcript and
+    
+class EmotionAnalysis(Base):    
     __tablename__ = "emotion_analysis"
     id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
     session_id = Column(Integer, ForeignKey("session.id", ondelete="CASCADE"), nullable=False)
@@ -108,11 +109,23 @@ class EmotionAnalysis(Base):
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
     session = relationship("InterviewSession", back_populates="emotion_analysis")
 
-class AnalysisResult(Base): # storing analysis result from ai after the session is completed
-    __tablename__ = "analysis_results"
+class Qna_result(Base): # this stores each question answer pair result from ai for each question in the session so 1 to many relationship with session and question
+    __tablename__ = "qna_results"
     id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
     session_id = Column(Integer, ForeignKey("session.id", ondelete="CASCADE"), nullable=False)
-    analysis_text = Column(Text, unique=False, nullable = False)
+    question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"),nullable=False)
     score = Column(Integer, unique=False, nullable = False)
-    session = relationship("InterviewSession", back_populates="analysis_results")
+    feedback = Column(Text, unique=False, nullable = True)
+    strength = Column(String, unique=False, nullable = True)
+    weakness = Column(String, unique=False, nullable = True)
     created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
+
+class Emotion_result(Base): # it stores whole session single emotion analysis result like overall perception, recommendation and confidence level
+    __tablename__ = "emotion_results"
+    id = Column(Integer, primary_key=True, unique=True, nullable=False,index = True)
+    session_id = Column(Integer, ForeignKey("session.id", ondelete="CASCADE"), nullable=False)
+    perception = Column(String, unique=False, nullable = False)
+    recommendation = Column(Text, unique=False, nullable = False)
+    confidence = Column(String, unique=False, nullable = False)
+    created_at = Column(TIMESTAMP(timezone = "True"),server_default = text("NOW()"),nullable = False)
+    session = relationship("InterviewSession", back_populates="emotion_result")
