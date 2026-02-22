@@ -10,7 +10,7 @@ from sqlalchemy import text
 from src.models.models import LiveChunksInput, SessionStatus, InterviewSession, User, Transcript, Questions , EmotionAnalysis , Qna_result,Emotion_result
 from src.core.security import get_current_user
 from src.services.aiservices import AudioProcessor, EmotionDetector,unload_whisper,unload_emotion,LLMService
-from starlette.websockets import WebSocketDisconnect, WebSocketState
+from starlette.websockets import WebSocketDisconnect, WebSocketState,WebSocket
 
 class SessionService:
     @staticmethod
@@ -78,13 +78,9 @@ class SessionService:
         
         try:
             while True:
-                try:
-                    data = await websocket.receive_json()
-                    print(f"📩 Received: {type(data)} - Keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
-                except Exception as e:
-                    print(f"❌ JSON receive error: {e}")
-                    continue
-
+                data = await websocket.receive_json() # Let disconnects propagate to outer block
+                print(f"📩 Received: {type(data)} - Keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
+                
                 # -------------------------------------------------------
                 # Handle messages with "type" and "data" keys
                 # This is the format your client is sending!
@@ -177,16 +173,18 @@ class SessionService:
 
                         # sending back live analysed frame to frontend
                         try:
+                            from starlette.websockets import WebSocketState as WSState  # Import WebSocketState for connection state checks
                             emotion_detector = EmotionDetector() 
                             analysis_result = emotion_detector.analyze(video_bytes)
-                            await websocket.send_json({
-                                "type": "live_emotion_analysis",
-                                "data": analysis_result,
-                                "chunk_number": chunk_count
-                            })
+                            if websocket.client_state == WSState.CONNECTED:
+                                await websocket.send_json({
+                                    "type": "live_emotion_analysis",
+                                    "data": analysis_result,
+                                    "chunk_number": chunk_count
+                                })
                         except Exception as e:
-                            print(f"❌ Live emotion analysis error: {e}")
-                            print(f"❌ Traceback:\n{traceback.format_exc()}")
+                            # This caught the 1005/Broken Pipe—log it and move on
+                            print(f"⚠️ Socket closed before live result could be sent: {e}")
 
                     # ----- SESSION COMPLETE -----
                     elif msg_type == "session_complete" or msg_type == "end_interview":
@@ -258,58 +256,6 @@ class SessionService:
                             print(f"✅ Emotion Analysis Complete. Processed {len(results)} frames.")
                             unload_emotion()
 
-                            # for sending single questionid and creating result for qna_result table by applying loop for each question and its corresponding transcript and emotion analysis result and then applying llm to generate feedback, strength and weakness and then storing in qna_result table
-                            LLMService.install_model(instruction="llm")
-                            evaluation = []
-                            for qid in session.transcripts.question_id:
-                                question = db.query(Questions).filter(Questions.id == qid).first()
-                                transcript = db.query(Transcript).filter(Transcript.question_id == qid, Transcript.session_id == session_id).first()       
-                                evaluation.append(LLMService.evaluate_candidate_response(
-                                    q_id=qid,
-                                    question=question.question_text,
-                                    recommended_answer=question.recommended_answer,
-                                    candidate_response=transcript.user_response,
-                                    cv_text= session.cv.cv_text
-                                ))
-                                qna_result = Qna_result(
-                                    session_id=session_id,
-                                    question_id=qid,
-                                    score=evaluation[-1]['score'],
-                                    feedback=evaluation[-1]['feedback'],
-                                    strength=evaluation[-1]['strength'],
-                                    weakness=evaluation[-1]['weakness']
-                                )
-                                db.add(qna_result)
-                            # now for emotion result for whole session we can take overall emotion analysis result and then generate perception, recommendation and confidence level using llm and then store in emotion_result table
-                            overall_emotion = max(results, key=lambda x: x['score']) if results else None
-                            if overall_emotion:
-                                perception = f"Overall emotion detected: {overall_emotion['label']} with confidence {overall_emotion['score']:.2f}"
-                                recommendation = LLMService.generate_emotion_recommendation(overall_emotion['label'])
-                                confidence = f"{overall_emotion['score']:.2f}"
-                                
-                                emotion_result = Emotion_result(
-                                    session_id=session_id,
-                                    perception=perception,
-                                    recommendation=recommendation,
-                                    confidence=confidence
-                                )
-                                db.add(emotion_result)
-                            
-                            db.commit()
-                            LLMService.install_model(instruction="unload")
-                            # Final attempt to send
-                            try:
-                        # Only attempt to send if the connection is still open
-                                from starlette.websockets import WebSocketState
-                                if websocket.client_state == WebSocketState.CONNECTED:
-                                    await websocket.send_json({
-                                        "type": "analysis_complete",
-                                        "data": "Analysis processed successfully"
-                                    })
-                            except Exception as e:
-                                print(f"⚠️ Could not send analysis result via WebSocket (Client Disconnected): {e}")
-                            
-
                         except Exception as e:
                             print(f"❌ Post-processing error: {e}")
                             traceback.print_exc()
@@ -327,13 +273,17 @@ class SessionService:
                         print(f"Analyzing result for qna response and emotion result and saving to db")
                             #qna needs
 
-                        await websocket.send_json({
-                            "type": "status",
-                            "data": "Interview Completed",
-                            "total_chunks": chunk_count
-                        })
-                        break
-
+                        try:
+                            # Check state explicitly using the imported WebSocketState
+                            if websocket.client_state == WebSocketState.CONNECTED:
+                                await websocket.send_json({
+                                    "type": "status",
+                                        "data": "Interview Completed",
+                                        "total_chunks": chunk_count
+                                })
+                                await websocket.close()
+                        except Exception as e:
+                            print(f"⚠️ Final close failed (already closed): {e}")
                     else:
                         print(f"⚠️ Unknown message type: {msg_type}")
 
@@ -486,3 +436,88 @@ class SessionService:
         db.commit()
         
         return {"message": "Session deleted successfully"}
+    
+
+    @staticmethod
+    async def analyse_session(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
+        # 1. Verify User and Fetch Session
+        user_id = get_current_user(token)
+        session = db.query(InterviewSession).filter(
+            InterviewSession.id == session_id,
+            InterviewSession.user_id == user_id
+        ).first()
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found or unauthorized")
+
+        try:
+            # 2. Initialize Service Instance
+            llmservice = LLMService()
+            llmservice.install_model(instruction="llm")
+
+            # 3. Q&A Analysis Loop
+            unique_qids = {t.question_id for t in session.transcripts if t.question_id is not None}
+            for qid in unique_qids:
+                question = db.query(Questions).filter(Questions.id == qid).first()
+                transcript = db.query(Transcript).filter(
+                    Transcript.question_id == qid, 
+                    Transcript.session_id == session_id
+                ).first()
+                
+                if question and transcript:
+                    cv_content = session.cv.cv_text if session.cv else "No CV provided"
+                    
+                    eval_result = await llmservice.evaluate_candidate_response(
+                        q_id=qid,
+                        question=question.question_text,
+                        recommended_answer=question.recommended_answer or "No ideal answer provided",
+                        candidate_response=transcript.user_response,
+                        cv_text=cv_content
+                    )
+                    
+                    qna_result = Qna_result(
+                        session_id=session_id,
+                        question_id=qid,
+                        score=eval_result.get('score', 0),
+                        feedback=eval_result.get('feedback', ''),
+                        strength=", ".join(eval_result.get('strengths', [])),
+                        weakness=", ".join(eval_result.get('improvements', []))
+                    )
+                    db.add(qna_result)
+
+            # 4. Overall Emotion Result (Fetched from DB records saved during live session)
+            emotion_records = db.query(EmotionAnalysis).filter(EmotionAnalysis.session_id == session_id).all()
+            
+            if emotion_records:
+                # Reconstruct 'results' list from DB records
+                results = [{"label": r.emotion_label, "score": float(r.emotion_score)} for r in emotion_records]
+                overall_emotion = max(results, key=lambda x: x['score'])
+                
+                emo_eval = llmservice.evaluate_emotion(
+                    emotion_label=[overall_emotion['label']], 
+                    confidence_score=[overall_emotion['score']]
+                )
+                
+                perception_text = emo_eval.get('perception', f"Overall emotion: {overall_emotion['label']}")
+                recs = emo_eval.get('recommendations', [])
+                recommendation_str = ", ".join(recs) if isinstance(recs, list) else str(recs)
+                
+                emotion_result = Emotion_result(
+                    session_id=session_id,
+                    perception=perception_text,
+                    recommendation=recommendation_str,
+                    confidence=str(overall_emotion['score'])
+                )
+                db.add(emotion_result)
+
+            # 5. Final Commit and Unload
+            db.commit()
+            llmservice.install_model(instruction="unload")
+            
+            return {"status": "success", "message": "Analysis completed and saved"}
+
+        except Exception as e:
+            db.rollback()
+            print(f"❌ Analysis failed: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

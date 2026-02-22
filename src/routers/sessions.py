@@ -50,8 +50,20 @@ async def get_session_questions(
         session_id=session_id
     )
 #for users to fetch their session analysis and score
-@router.get("/{session_id}/analysis")
+@router.get("/{session_id}/analyze")
 async def get_session_analysis(
+    session_id: int,
+    db: Session = Depends(get_db),
+    token: HTTPAuthorizationCredentials = Depends(auth_scheme)
+):
+    return await SessionService.analyse_session(
+        token=token,
+        db=db,
+        session_id=session_id
+    )
+
+@router.get("/{session_id}/analyss/result")
+async def get_analysis_result(
     session_id: int,
     db: Session = Depends(get_db),
     token: HTTPAuthorizationCredentials = Depends(auth_scheme)
