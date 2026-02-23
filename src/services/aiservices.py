@@ -160,7 +160,7 @@ class LLMService:
             questions_prompt = f"""<|user|>
 You are an expert HR Manager. Generate 10 interview questions based on the provided Context.
 Rules:
-1. 4 Technical, 3 Behavioral, 3 Situational.
+1. 4 Easy, 3 Medium, 3 Difficult.
 2. Output ONLY a numbered list. No intro/outro text.
 
 CANDIDATE CV: {cv_text[:2000]}

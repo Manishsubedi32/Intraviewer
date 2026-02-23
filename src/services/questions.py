@@ -1,7 +1,7 @@
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from src.models.models import Questions, User, InterviewSession, Cv, TextPrompts
+from src.models.models import Questions, User, InterviewSession, Cv, TextPrompts,Transcript
 from src.routers import questions
 from src.schemas.auth import QuestionBase
 from src.core.security import get_current_user, auth_scheme
@@ -142,6 +142,19 @@ class QuestionsService:
             Questions.session_id == session_id
         ).order_by(Questions.order).all()
 
+        user_transcripts = db.query(Transcript).filter(
+            Transcript.session_id == session_id,
+            Transcript.is_ai_response == False
+        ).all()
+        
+        # Determine user_response for each question
+        question_responses = {}
+        for t in user_transcripts:
+            if t.question_id and t.user_response:
+                if t.question_id not in question_responses:
+                    question_responses[t.question_id] = []
+                question_responses[t.question_id].append(t.user_response)
+        print(f"User responses mapped to questions: {question_responses}")
         return {
             "session_id": session_id,
             "total_questions": len(questions),
@@ -150,8 +163,11 @@ class QuestionsService:
                     "id": q.id,
                     "order": q.order,
                     "question_text": q.question_text,
+                    # Try matching by Question ID first (correct), then fallback to Order (legacy data fix)
+                    "user_response": " ".join(question_responses.get(q.id) or question_responses.get(q.order, [])),
                     "recommended_answer": q.recommended_answer,
                     "difficulty_level": q.difficulty_level.value if q.difficulty_level else None
                 } for q in questions
             ]
+            
         }
