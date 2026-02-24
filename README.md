@@ -49,7 +49,7 @@ The backend service for **Intraviewer**, an intelligent mock interview platform.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/intraviewer-backend.git
+git clone https://github.com/Manishsubedi32/intraviewer-backend.git
 cd intraviewer-backend
 ```
 

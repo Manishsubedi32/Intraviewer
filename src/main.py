@@ -21,20 +21,21 @@ app.add_middleware(
 )
     
 
-@app.get("/db/debug")
-async def debug_connection():
-    """Debug database connection configuration"""
-    from src.db.database import DATABASE_URL
+# @app.get("/db/debug")
+# async def debug_connection():
+#     """Debug database connection configuration"""
+#     from src.db.database import DATABASE_URL
     
-    return {
-        "DATABASE_URL": DATABASE_URL,
-        "DB_USERNAME": os.getenv('DB_USERNAME'),
-        "DB_PASSWORD": os.getenv('DB_PASSWORD'), 
-        "DB_HOST": os.getenv('DB_HOST'),
-        "DB_PORT": os.getenv('DB_PORT'),
-        "DB_NAME": os.getenv('DB_NAME'),
-        "Full_ENV_DATABASE_URL": os.getenv('DATABASE_URL')
-    }
+#     return {
+#         "DATABASE_URL": DATABASE_URL,
+#         "DB_USERNAME": os.getenv('DB_USERNAME'),
+#         "DB_PASSWORD": os.getenv('DB_PASSWORD'), 
+#         "DB_HOST": os.getenv('DB_HOST'),
+#         "DB_PORT": os.getenv('DB_PORT'),
+#         "DB_NAME": os.getenv('DB_NAME'),
+#         "Full_ENV_DATABASE_URL": os.getenv('DATABASE_URL')
+#     }
+## use this only when you are testing
 
 @app.on_event("startup")
 
