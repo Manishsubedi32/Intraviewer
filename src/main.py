@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from src.db.database import get_db, test_database_connection, engine, Base
 from fastapi.middleware.cors import CORSMiddleware
-from src.routers import auth, users, questions, userinput, sessions
+from src.routers import auth, users, questions, userinput, sessions,tips
 from src.models import models # Ensure all models are loaded for create_all
 import os
 from dotenv import load_dotenv
@@ -60,3 +60,4 @@ app.include_router(users.router) # user related operations like getting user det
 app.include_router(questions.router) # question related operations like adding, updating, deleting questions
 app.include_router(userinput.router) # users session detail like uploading cv and text prompts
 app.include_router(sessions.router) # interview session related operations like creating session and handling websocket for live audio/video
+app.include_router(tips.router) # for fetching random tips for interview

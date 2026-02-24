@@ -476,21 +476,6 @@ class EmotionDetector:
             traceback.print_exc()
             return {"error": str(e)}
 
-            # 2. Run Prediction
-            predictions = model.predict(img_array, verbose=0)
-            predicted_class_idx = np.argmax(predictions[0])
-            confidence = float(predictions[0][predicted_class_idx])
-            
-            label = self.labels[predicted_class_idx] if predicted_class_idx < len(self.labels) else "Unknown"
-
-            print(f"✅ Emotion Detected: {label} (conf: {confidence:.4f})")
-            
-            # Format result
-            return {
-                "label": label,
-                "score": confidence,
-                "all_scores": {self.labels[i]: float(predictions[0][i]) for i in range(len(self.labels))}
-            }
                 
         except Exception as e:
             print(f"❌ Emotion Prediction Failed: {e}")
