@@ -8,6 +8,9 @@ from PIL import Image
 from faster_whisper import WhisperModel
 import torch
 from transformers import pipeline
+import tensorflow as tf
+import numpy as np
+import cv2
 
 # --- MEMORY MANAGEMENT ---
 whisper_model = None
@@ -77,19 +80,16 @@ def unload_emotion():
 def load_emotion():
     global emotion_resources
     if emotion_resources is None:
-        unload_llm()
         try:
-            print("⏳ Loading Emotion AI (dima806/facial_emotions_image_detection)...")
-            device = "mps" if torch.backends.mps.is_available() else "cpu"
+            print("⏳ Loading RAF-DB Emotion Model (best_model.h5)...")
             
-            # Using dima806 classification model for speed on 8GB RAM
-            model_id = "dima806/facial_emotions_image_detection"
-            classifier = pipeline("image-classification", model=model_id, device=device)
+            # Load Keras Model
+            model = tf.keras.models.load_model('best_model.h5')
             
-            emotion_resources = classifier
-            print(f"✅ Emotion AI (ViT) Ready! (using {device})")
+            emotion_resources = model
+            print("✅ RAF-DB Emotion Model Loaded!")
         except Exception as e:
-             print(f"⚠️ Emotion AI Load Failed: {e}")
+             print(f"⚠️ Emotion Model Load Failed: {e}")
              return None
              
     return emotion_resources
@@ -386,40 +386,117 @@ class EmotionDetector:
     def __init__(self):
         # We don't load here to save RAM; we load on the first call to analyze
         print("EmotionDetector initialized (lazy load mode)")
+        
+        # RAF-DB Specific Labels (based on user info)
+        self.labels = ['Surprise', 'Fear', 'Disgust', 'Happy', 'Sad', 'Angry', 'Neutral']
+
+        # Load Haar Cascade
+        # We need the path to the XML file. cv2.data.haarcascades helps find it.
+        try:
+             self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        except Exception:
+             print("⚠️ Warning: Could not load Haar Cascade. Face detection will be skipped.")
+             self.face_cascade = None
 
     def analyze(self, image_input: Image.Image):
         """
-        Input: Image or bytes
-        Output: Top emotion classification result
+        Input: PIL Image or bytes
+        Output: Top emotion classification result from cropped face area
         """
-        classifier = load_emotion()
-        if not classifier:
-            return {"error": "Classifier not available"}
+        model = load_emotion()
+        if not model:
+            return {"error": "Emotion Model not available"}
 
-        # 1. Prepare image
-        if isinstance(image_input, bytes):
-            image = Image.open(io.BytesIO(image_input))
-        else:
-            image = image_input
-
-        # 2. Run Classification
         try:
-            results = classifier(image) # Returns list of label/score dicts
+            # 1. Convert Input to OpenCV Format (BGR)
+            if isinstance(image_input, bytes):
+                # If raw bytes from file upload
+                nparr = np.frombuffer(image_input, np.uint8)
+                image_cv = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            elif isinstance(image_input, Image.Image):
+                # If PIL Image
+                image_cv = cv2.cvtColor(np.array(image_input), cv2.COLOR_RGB2BGR)
+            else:
+                 return {"error": "Unsupported image format"}
             
-            # Formulate response to match previous expected format if needed
-            # We return the whole list or just top result
-            top_result = results[0] # {label: 'sad', score: 0.99}
+            if image_cv is None:
+                return {"error": "Could not decode image"}
+
+            # 2. Face Detection
+            # Convert to grayscale for Haar Cascade
+            gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
             
-            # To maintain compatibility with user expectations of JSON/Labels
-            print(f"✅ Emotion Detected: {top_result['label']} (score: {top_result['score']:.4f})")
+            faces = []
+            if self.face_cascade:
+                faces = self.face_cascade.detectMultiScale(
+                    gray, 
+                    scaleFactor=1.1, 
+                    minNeighbors=5, 
+                    minSize=(30, 30)
+                )
+
+            # 3. Crop Face (or use full image)
+            if len(faces) > 0:
+                # Use the largest face found
+                (x, y, w, h) = max(faces, key=lambda f: f[2] * f[3])
+                print(f"✅ Face Detected at: x={x}, y={y}, w={w}, h={h}")
+                
+                # Crop logic
+                face_roi = image_cv[y:y+h, x:x+w]
+                face_rgb = cv2.cvtColor(face_roi, cv2.COLOR_BGR2RGB)
+            else:
+                print("⚠️ No face detected. Using full image.")
+                face_rgb = cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB)
+
+            # 4. Preprocess for Model (100x100, Normalized)
+            target_size = (100, 100)
+            img_resized = cv2.resize(face_rgb, target_size)
+            
+            img_array = img_resized.astype('float32') / 255.0  # Normalize [0,1]
+            img_array = np.expand_dims(img_array, axis=0)      # Add batch dimension -> (1, 100, 100, 3)
+
+            # 5. Predict
+            predictions = model.predict(img_array, verbose=0)
+            predicted_class_idx = np.argmax(predictions[0])
+            confidence = float(predictions[0][predicted_class_idx])
+            
+            label = self.labels[predicted_class_idx] if predicted_class_idx < len(self.labels) else "Unknown"
+
+            print(f"✅ Emotion Detected: {label} (conf: {confidence:.4f})")
+            
             return {
-                "label": top_result["label"],
-                "score": float(top_result["score"]),
-                "all_emotions": results # Just in case we need context
+                "label": label,
+                "score": confidence,
+                "all_scores": {self.labels[i]: float(predictions[0][i]) for i in range(len(self.labels))}
             }
                 
         except Exception as e:
             print(f"❌ Emotion Prediction Failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+
+            # 2. Run Prediction
+            predictions = model.predict(img_array, verbose=0)
+            predicted_class_idx = np.argmax(predictions[0])
+            confidence = float(predictions[0][predicted_class_idx])
+            
+            label = self.labels[predicted_class_idx] if predicted_class_idx < len(self.labels) else "Unknown"
+
+            print(f"✅ Emotion Detected: {label} (conf: {confidence:.4f})")
+            
+            # Format result
+            return {
+                "label": label,
+                "score": confidence,
+                "all_scores": {self.labels[i]: float(predictions[0][i]) for i in range(len(self.labels))}
+            }
+                
+        except Exception as e:
+            print(f"❌ Emotion Prediction Failed: {e}")
+            # Fallback for debugging if shape mismatch
+            if "shape" in str(e).lower():
+                print("⚠️ Hint: Model input shape mismatch. Try changing target_size to (224, 224).")
             return {"error": str(e)}
 
 # --- TEST IT ---
@@ -429,7 +506,7 @@ if __name__ == "__main__":
         detector = EmotionDetector()
         
         # 2. Load Local Image
-        img_path = "/Users/manishsubedi/Documents/coding/Intraviewer/backend/happy.jpg"
+        img_path = "/Users/manishsubedi/Documents/coding/Intraviewer/backend/difficulemotion1.jpg"
         print(f"📸 Loading local image: {img_path}")
         img = Image.open(img_path)
         
