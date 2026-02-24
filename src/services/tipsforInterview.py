@@ -63,18 +63,48 @@ class TipsForInterviewService:
                     
                     if current_topic not in topics:
                         topics[current_topic] = []
-                        
+                    
+                    # Store current tip
                     topics[current_topic].append({
                         "id": tip_number,
                         "tip": tip_content
                     })
+                    
+                    # Special check: Sometimes multiple short tips are on one line in PDF (e.g. "90. Next Steps...")
+                    # We check if 'tip_content' ITSELF contains another numbered tip like "90. Next Steps..."
+                    secondary_match = tip_pattern.search(tip_content)
+                    if secondary_match:
+                        # Find where the second tip starts
+                        start_idx = secondary_match.start()
+                        
+                        # 1. Update the FIRST tip to end before the second one starts
+                        first_tip_text = tip_content[:start_idx].strip()
+                        topics[current_topic][-1]["tip"] = first_tip_text
+                        
+                        # 2. Add the SECOND tip as a new entry
+                        second_tip_number = secondary_match.group(1)
+                        second_tip_text = secondary_match.group(2)
+                        
+                        topics[current_topic].append({
+                            "id": second_tip_number,
+                            "tip": second_tip_text
+                        })
                 else:
                     # 3. Handle multi-line tips
                     # If line is NOT a header and NOT a new tip, append to previous tip
                     if current_topic in topics and topics[current_topic]:
                         last_tip = topics[current_topic][-1]
-                        # Append with space
-                        last_tip['tip'] += " " + line
+                        
+                        # Clean up formatting: if we accidentally append a section header at end
+                        # Ex: "10. End on a High Note... 🏁 Closing & Follow-Up"
+                        # We try to remove known topic headers if they appear at the END of a tip
+                        for indicator in topic_indicators:
+                           if indicator in line:
+                               line = line.replace(indicator, "").strip()
+
+                        # Only append if it looks like sentence continuation
+                        if line:
+                             last_tip['tip'] += " " + line
 
             # --- Select One Random Tip ---
             all_topics = list(topics.keys())
