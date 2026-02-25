@@ -74,6 +74,7 @@ num2words==0.5.14
 numpy==2.4.0
 onnxruntime==1.23.2
 opencv-contrib-python==4.13.0.92
+opencv-python-headless==4.11.0.86
 opt_einsum==3.4.0
 optree==0.18.0
 packaging==25.0
