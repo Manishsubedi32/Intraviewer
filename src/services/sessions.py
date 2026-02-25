@@ -152,7 +152,6 @@ class SessionService:
                     elif msg_type == "video":
                         try:
                             video_bytes = base64.b64decode(msg_data)
-                            print(f"✅ Decoded video: {len(video_bytes)} bytes")
                             
                             new_chunk = LiveChunksInput(
                                 session_id=session_id,
@@ -162,20 +161,22 @@ class SessionService:
                             db.add(new_chunk)
                             db.flush()
                             db.commit()
-                            db.refresh(new_chunk)
                             chunk_count += 1
-                            print(f"✅ Video chunk #{chunk_count} STORED with ID={new_chunk.id}")
                             
-                        except Exception as e:
-                            db.rollback()
-                            print(f"❌ Video storage error: {e}")
-                            print(f"❌ Traceback:\n{traceback.format_exc()}")
-
-                        # sending back live analysed frame to frontend
-                        try:
-                            from starlette.websockets import WebSocketState as WSState  # Import WebSocketState for connection state checks
+                            # ⚡ LIVE ANALYSIS & STORAGE
                             emotion_detector = EmotionDetector() 
                             analysis_result = emotion_detector.analyze(video_bytes)
+                            
+                            # Store result immediately to avoid post-processing overhead
+                            new_analysis = EmotionAnalysis(
+                                session_id=session_id,
+                                emotion_label=analysis_result['label'],
+                                emotion_score=str(analysis_result['score'])
+                            )
+                            db.add(new_analysis)
+                            db.commit()
+
+                            from starlette.websockets import WebSocketState as WSState
                             if websocket.client_state == WSState.CONNECTED:
                                 await websocket.send_json({
                                     "type": "live_emotion_analysis",
@@ -183,107 +184,26 @@ class SessionService:
                                     "chunk_number": chunk_count
                                 })
                         except Exception as e:
-                            # This caught the 1005/Broken Pipe—log it and move on
-                            print(f"⚠️ Socket closed before live result could be sent: {e}")
+                            db.rollback()
+                            print(f"❌ Video analysis/storage error: {e}")
 
                     # ----- SESSION COMPLETE -----
                     elif msg_type == "session_complete" or msg_type == "end_interview":
                         print(f"🛑 Session Complete received. Total chunks: {chunk_count}")
-                        # Update session status to COMPLETED
+                        
                         session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
-                        print("unloading whisper",unload_whisper())
                         if session:
                             session.status = SessionStatus.COMPLETED
                             db.commit()
-                            print(f"✅ Session {session_id} marked as COMPLETED")
 
-                        # ------------------------------------------------------------------
-                        # ⚡ POST-PROCESSING: ANALYZE VIDEO FRAMES NOW
-                        # ------------------------------------------------------------------
-                        try:
-                            print("⏳ Starting Post-Session Emotion Analysis...")
-                            
-                            # Try to tell client we are starting, but ignore if they left
-                            try:
-                                await websocket.send_json({"type": "status", "data": "Processing video analysis..."})
-                            except Exception:
-                                print("⚠️ Client disconnected, continuing analysis in background...")
-
-                            # 1. Load Detector 
+                        # 🏁 CLEANUP: Unload models now that session is done
+                        unload_whisper()
+                        unload_emotion()
                         
-                            emotion_detector = EmotionDetector() 
-                            
-                            # 2. Fetch all video frames for this session
-                            video_chunks = db.query(LiveChunksInput).filter(
-                                LiveChunksInput.session_id == session_id,
-                                LiveChunksInput.video_chunk != None
-                            ).order_by(LiveChunksInput.id).all()
-                            
-                            print(f"   🎥 Found {len(video_chunks)} frames to analyze.")
-                            
-                            results = []
-                            for i, chunk in enumerate(video_chunks):
-                                if chunk.video_chunk:
-                                    # Analyze individual frame
-                                    analysis = emotion_detector.analyze(chunk.video_chunk)
-                                    results.append(analysis)
-                                    
-                                    # Try to send progress, but don't crash if failed
-                                    try:
-                                        if i % 5 == 0:
-                                            await websocket.send_json({
-                                                "type": "status", 
-                                                "data": f"Analyzed frame {i+1}/{len(video_chunks)}"
-                                            })
-                                    except Exception:
-                                        pass # Client is gone, that's fine
+                        # Note: The "POST-PROCESSING" video loop is now removed 
+                        # because results were saved live above.
 
-                            # 3. Store Results to DB (CRITICAL STEP)
-                            # You need to save 'results' into the 'InterviewSession' or 'AnalysisResult' table here!
-                            # Currently your code just prints it and tries to send it.
-
-                            for result in results:
-                                emotion_analysis = EmotionAnalysis(
-                                    session_id=session_id,
-                                    emotion_label=result['label'],
-                                    emotion_score=str(result['score'])
-                                )
-                                db.add(emotion_analysis)
-                            
-                            db.commit()
-                            
-                            
-                            print(f"✅ Emotion Analysis Complete. Processed {len(results)} frames.")
-                            unload_emotion()
-
-                        except Exception as e:
-                            print(f"❌ Post-processing error: {e}")
-                            traceback.print_exc()
-                        # ------------------------------------------------------------------
-
-                        # Mark session complete
-                        try:
-                            session.status = SessionStatus.COMPLETED
-                            db.commit()
-                            print(f"✅ Session COMPLETED")
-                        except Exception as e:
-                            db.rollback()
-                            print(f"❌ Session update error: {e}")
-                        
-                        print(f"Analyzing result for qna response and emotion result and saving to db")
-                            #qna needs
-
-                        try:
-                            # Check state explicitly using the imported WebSocketState
-                            if websocket.client_state == WebSocketState.CONNECTED:
-                                await websocket.send_json({
-                                    "type": "status",
-                                        "data": "Interview Completed",
-                                        "total_chunks": chunk_count
-                                })
-                                await websocket.close()
-                        except Exception as e:
-                            print(f"⚠️ Final close failed (already closed): {e}")
+                        return {"message": "Session complete", "session_id": session_id}
                     else:
                         print(f"⚠️ Unknown message type: {msg_type}")
 
@@ -451,6 +371,8 @@ class SessionService:
             raise HTTPException(status_code=404, detail="Session not found or unauthorized")
 
         try:
+            unload_emotion()
+            unload_whisper()
             # 2. Initialize Service Instance
             llmservice = LLMService()
             llmservice.install_model(instruction="llm")
