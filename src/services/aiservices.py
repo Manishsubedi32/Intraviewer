@@ -180,6 +180,9 @@ JOB CONTEXT: {job_description[:2500]}
                     q_text = re.sub(r'^\d+\.\s*', '', clean_line)
                     if q_text:
                         questions_list.append(q_text)
+            
+            # --- FIX: ENSURE ONLY 10 QUESTIONS ARE PROCESSED ---
+            questions_list = questions_list[:10]
 
             if not questions_list:
                 questions_list = [questions_text] if questions_text else ["No questions generated"]
