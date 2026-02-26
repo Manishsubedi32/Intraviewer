@@ -50,9 +50,13 @@ def unload_whisper():
     global whisper_model
     if whisper_model is not None:
         print("🧹 Unloading Whisper to free RAM...")
-        del whisper_model
+        # Clear model reference and force garbage collection
         whisper_model = None
         gc.collect()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
+        # On Mac, notify MPS to release cache
+        if hasattr(torch, 'mps') and torch.backends.mps.is_available():
+            torch.mps.empty_cache()
         print("✅ Whisper Unloaded.")
 
 def load_whisper():

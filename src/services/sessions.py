@@ -188,21 +188,45 @@ class SessionService:
                             print(f"❌ Video analysis/storage error: {e}")
 
                     # ----- SESSION COMPLETE -----
+                    # ----- SESSION COMPLETE -----
                     elif msg_type == "session_complete" or msg_type == "end_interview":
                         print(f"🛑 Session Complete received. Total chunks: {chunk_count}")
                         
+                        # 1. ⏳ CRITICAL FIX: Flush any remaining audio in the buffer before unloading!
+                        try:
+                            final_transcription = await processor.flush()
+                            if final_transcription and len(final_transcription.strip()) > 0:
+                                last_question_id = data.get("question_number", None)
+                                new_transcript = Transcript(
+                                    session_id=session_id,
+                                    user_response=final_transcription,
+                                    is_ai_response=False,
+                                    question_id=last_question_id
+                                )
+                                db.add(new_transcript)
+                                db.commit()
+                                print(f"✅ Final Flushed Transcript STORED: {final_transcription[:80]}...")
+                                
+                                # Send the final transcript back to the frontend so the UI updates
+                                await websocket.send_json({
+                                    "type": "transcription",
+                                    "data": final_transcription,
+                                    "chunk_number": chunk_count + 1
+                                })
+                        except Exception as e:
+                            db.rollback()
+                            print(f"❌ Final flush error: {e}")
+
+                        # 2. Mark session complete
                         session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
                         if session:
                             session.status = SessionStatus.COMPLETED
                             db.commit()
 
-                        # 🏁 CLEANUP: Unload models now that session is done
+                        # 3. 🏁 CLEANUP: Now it is safe to unload models
                         unload_whisper()
                         unload_emotion()
                         
-                        # Note: The "POST-PROCESSING" video loop is now removed 
-                        # because results were saved live above.
-
                         return {"message": "Session complete", "session_id": session_id}
                     else:
                         print(f"⚠️ Unknown message type: {msg_type}")
@@ -247,13 +271,19 @@ class SessionService:
                     await websocket.close(code=1011)
                 except RuntimeError:
                     pass
-                
+                    
         finally:
+            # 🧹 CRITICAL FIX: Guarantee models are unloaded no matter how the socket closes
+            print("🧹 WebSocket closed. Executing final memory cleanup...")
+            unload_whisper()
+            unload_emotion()
+            
             if websocket.client_state == WebSocketState.CONNECTED:
                 try:
                     await websocket.close()
                 except RuntimeError:
                     pass
+        
     @staticmethod
     async def fetch_session_analysis(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
         user_id = get_current_user(token)
@@ -370,10 +400,13 @@ class SessionService:
         if not session:
             raise HTTPException(status_code=404, detail="Session not found or unauthorized")
 
-        # 1. Force release of STT memory and load LLM once
+        # 1. Force release of STT memory
         unload_whisper()
         unload_emotion()
+        
         llmservice = LLMService()
+        # CRITICAL: Initialize the service's internal model before use
+        llmservice.install_model("llm") 
 
         try:
             # 2. Analysis Loop
