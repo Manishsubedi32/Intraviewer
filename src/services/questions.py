@@ -5,7 +5,7 @@ from src.models.models import Questions, User, InterviewSession, Cv, TextPrompts
 from src.routers import questions
 from src.schemas.auth import QuestionBase
 from src.core.security import get_current_user, auth_scheme
-from src.services.aiservices import LLMService
+from src.services.aiservices import LLMService, load_whisper
 
 
 class QuestionsService:
@@ -77,6 +77,9 @@ class QuestionsService:
         print(f"🤖 Generating questions with recommended answers for Session {session_id}...")
 
         questions_with_answers = await llm_service.generate_interview_questions(cv_text, job_context)
+
+        load_whisper() # to free up memory before heavy LLM call
+        print("wispher model Loaded")
 
         if not questions_with_answers:
             raise HTTPException(status_code=500, detail="AI failed to generate questions")

@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy import text
 from src.models.models import LiveChunksInput, SessionStatus, InterviewSession, User, Transcript, Questions , EmotionAnalysis , Qna_result,Emotion_result
 from src.core.security import get_current_user
-from src.services.aiservices import AudioProcessor, EmotionDetector,unload_whisper,unload_emotion,LLMService
+from src.services.aiservices import AudioProcessor, EmotionDetector,unload_whisper,unload_emotion,LLMService,load_whisper
 from starlette.websockets import WebSocketDisconnect, WebSocketState,WebSocket
 
 class SessionService:
@@ -102,25 +102,25 @@ class SessionService:
                             await websocket.send_json({"error": f"Base64 decode failed: {str(e)}"})
                             continue
 
-                        # Store audio chunk
-                        try:
-                            new_chunk = LiveChunksInput(
-                                session_id=session_id,
-                                audio_chunk=audio_bytes,
-                                video_chunk=None,
-                            )
-                            db.add(new_chunk)
-                            db.flush()
-                            db.commit()
-                            db.refresh(new_chunk)
-                            chunk_count += 1
-                            print(f"✅ Audio chunk #{chunk_count} STORED with ID={new_chunk.id} ({len(audio_bytes)} bytes)")
+                        # # Store audio chunk
+                        # try:
+                        #     new_chunk = LiveChunksInput(
+                        #         session_id=session_id,
+                        #         audio_chunk=audio_bytes,
+                        #         video_chunk=None,
+                        #     )
+                        #     db.add(new_chunk)
+                        #     db.flush()
+                        #     db.commit()
+                        #     db.refresh(new_chunk)
+                        #     chunk_count += 1
+                        #     print(f"✅ Audio chunk #{chunk_count} STORED with ID={new_chunk.id} ({len(audio_bytes)} bytes)")
                             
-                        except Exception as e:
-                            db.rollback()
-                            print(f"❌ Database Error storing audio: {type(e).__name__}: {e}")
-                            print(f"❌ Traceback:\n{traceback.format_exc()}")
-                            continue
+                        # except Exception as e:
+                        #     db.rollback()
+                        #     print(f"❌ Database Error storing audio: {type(e).__name__}: {e}")
+                        #     print(f"❌ Traceback:\n{traceback.format_exc()}")
+                        #     continue
 
                         # Process audio for transcription
                         try:
@@ -370,14 +370,13 @@ class SessionService:
         if not session:
             raise HTTPException(status_code=404, detail="Session not found or unauthorized")
 
-        try:
-            unload_emotion()
-            unload_whisper()
-            # 2. Initialize Service Instance
-            llmservice = LLMService()
-            llmservice.install_model(instruction="llm")
+        # 1. Force release of STT memory and load LLM once
+        unload_whisper()
+        unload_emotion()
+        llmservice = LLMService()
 
-            # 3. Q&A Analysis Loop
+        try:
+            # 2. Analysis Loop
             unique_qids = {t.question_id for t in session.transcripts if t.question_id is not None}
             for qid in unique_qids:
                 question = db.query(Questions).filter(Questions.id == qid).first()
@@ -434,7 +433,7 @@ class SessionService:
 
             # 5. Final Commit and Unload
             db.commit()
-            llmservice.install_model(instruction="unload")
+            
             
             return {"status": "success", "message": "Analysis completed and saved"}
 
