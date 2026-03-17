@@ -21,6 +21,8 @@ The backend service for **Intraviewer**, an intelligent mock interview platform.
 - **🔐 Secure Auth:** JWT-based authentication and secure session management.
 - **📦 Database:** PostgreSQL with SQLAlchemy ORM for robust data persistence.
 
+--> You can find our frontend at this repo:- https://github.com/sandesht919/Intraviewer-Frontend-with-NextJS
+
 ---
 
 ## 🛠️ Tech Stack
