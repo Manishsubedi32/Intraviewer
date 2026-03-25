@@ -23,6 +23,19 @@ The backend service for **Intraviewer**, an intelligent mock interview platform.
 
 ---
 
+## 📸 Prototype
+
+<p align="center">
+  <img src="images/Screenshot%202026-02-26%20at%2012.06.53%20AM.png" alt="Dashboard" width="45%">
+  <img src="images/Screenshot%202026-02-26%20at%2012.07.13%20AM.png" alt="Interview" width="45%">
+</p>
+<p align="center">
+  <img src="images/Screenshot%202026-02-26%20at%2012.09.59%20AM.png" alt="Feedback" width="45%">
+  <img src="images/Screenshot%202026-03-25%20at%203.57.03%E2%80%AFPM.png" alt="Analysis" width="45%">
+</p>
+
+---
+
 ## 🛠️ Tech Stack
 
 - **Framework:** FastAPI (Python)
