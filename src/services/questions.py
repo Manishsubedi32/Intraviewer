@@ -5,7 +5,7 @@ from src.models.models import Questions, User, InterviewSession, Cv, TextPrompts
 from src.routers import questions
 from src.schemas.auth import QuestionBase
 from src.core.security import get_current_user, auth_scheme
-from src.services.aiservices import LLMService
+from src.services.aiservices import LLMService,load_whisper
 
 
 class QuestionsService:
@@ -41,12 +41,12 @@ class QuestionsService:
         Generates questions WITH recommended answers using LLM.
         Fetches Session's CV and Prompt from DB.
         """
-        # 1. Fetch Session
+     
         session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # 2. Fetch Linked CV
+        
         if not session.cv_id:
             raise HTTPException(status_code=400, detail="Session does not have a CV attached")
 
@@ -60,7 +60,7 @@ class QuestionsService:
 
         print(f"📄 CV text loaded: {len(cv_text)} chars")
 
-        # 3. Fetch Linked Job Description (TextPrompt)
+        
         if not session.prompt_id:
             raise HTTPException(status_code=400, detail="Session does not have a Job Description/Prompt attached")
 
@@ -68,11 +68,11 @@ class QuestionsService:
         if not prompt_record:
             raise HTTPException(status_code=404, detail="Associated Prompt record not found")
 
-        # Combine Topic Name and Prompt Text for better AI context
+       
         job_context = f"INTERVIEW TOPIC: {prompt_record.name}\n\nJOB DESCRIPTION: {prompt_record.prompt_text}"
         print(f"💼 Job context loaded: {len(job_context)} chars")
 
-        # 4. Call AI Service - now returns questions WITH recommended answers
+        
         llm_service = LLMService()
         print(f"🤖 Generating questions with recommended answers for Session {session_id}...")
 
@@ -81,7 +81,7 @@ class QuestionsService:
         if not questions_with_answers:
             raise HTTPException(status_code=500, detail="AI failed to generate questions")
 
-        # 5. Save questions WITH recommended answers to Database
+       
         saved_questions = []
         for i, q_data in enumerate(questions_with_answers):
             question_text = q_data.get("question", "")
@@ -90,7 +90,7 @@ class QuestionsService:
             new_question = Questions(
                 session_id=session_id,
                 question_text=question_text,
-                recommended_answer=recommended_answer,  # ✅ Save recommended answer
+                recommended_answer=recommended_answer,  
                 order=i + 1
             )
             db.add(new_question)
@@ -101,6 +101,9 @@ class QuestionsService:
             })
 
         db.commit()
+        print("loading whisper model ")
+        load_whisper()
+        print("whisper model loaded")
 
         print(f"✅ Saved {len(saved_questions)} questions with recommended answers")
 
@@ -113,7 +116,7 @@ class QuestionsService:
             Questions.session_id == session_id
         ).order_by(Questions.order).all()
         
-        # Return only the fields you want (excluding recommended_answer)
+        
         return [
             {
                 "id": q.id,
@@ -147,7 +150,7 @@ class QuestionsService:
             Transcript.is_ai_response == False
         ).all()
         
-        # Determine user_response for each question
+        
         question_responses = {}
         for t in user_transcripts:
             if t.question_id and t.user_response:
@@ -163,7 +166,7 @@ class QuestionsService:
                     "id": q.id,
                     "order": q.order,
                     "question_text": q.question_text,
-                    # Try matching by Question ID first (correct), then fallback to Order (legacy data fix)
+                    
                     "user_response": " ".join(question_responses.get(q.id) or question_responses.get(q.order, [])),
                     "recommended_answer": q.recommended_answer,
                     "difficulty_level": q.difficulty_level.value if q.difficulty_level else None

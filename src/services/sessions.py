@@ -81,17 +81,13 @@ class SessionService:
                 data = await websocket.receive_json() # Let disconnects propagate to outer block
                 print(f"📩 Received: {type(data)} - Keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
                 
-                # -------------------------------------------------------
-                # Handle messages with "type" and "data" keys
-                # This is the format your client is sending!
-                # -------------------------------------------------------
+      
                 if "type" in data:
                     msg_type = data.get("type")
                     msg_data = data.get("data")
                     
                     print(f"📨 Message type: {msg_type}")
 
-                    # ----- AUDIO DATA -----
                     if msg_type == "audio":
                         try:
                             
@@ -148,7 +144,7 @@ class SessionService:
                             db.rollback()
                             print(f"❌ Transcription error: {e}")
 
-                    # ----- VIDEO DATA -----
+                    
                     elif msg_type == "video":
                         try:
                             video_bytes = base64.b64decode(msg_data)
@@ -163,11 +159,11 @@ class SessionService:
                             db.commit()
                             chunk_count += 1
                             
-                            # ⚡ LIVE ANALYSIS & STORAGE
+                            
                             emotion_detector = EmotionDetector() 
                             analysis_result = emotion_detector.analyze(video_bytes)
                             
-                            # Store result immediately to avoid post-processing overhead
+   
                             new_analysis = EmotionAnalysis(
                                 session_id=session_id,
                                 emotion_label=analysis_result['label'],
@@ -200,16 +196,13 @@ class SessionService:
                         unload_whisper()
                         unload_emotion()
                         
-                        # Note: The "POST-PROCESSING" video loop is now removed 
-                        # because results were saved live above.
+                        
 
                         return {"message": "Session complete", "session_id": session_id}
                     else:
                         print(f"⚠️ Unknown message type: {msg_type}")
 
-                # -------------------------------------------------------
-                # Legacy format: {"bytes": "..."} 
-                # -------------------------------------------------------
+          
                 elif "bytes" in data:
                     try:
                         audio_bytes = base64.b64decode(data["bytes"])
@@ -360,7 +353,7 @@ class SessionService:
 
     @staticmethod
     async def analyse_session(token: HTTPAuthorizationCredentials, db: Session, session_id: int):
-        # 1. Verify User and Fetch Session
+
         user_id = get_current_user(token)
         session = db.query(InterviewSession).filter(
             InterviewSession.id == session_id,
@@ -373,11 +366,11 @@ class SessionService:
         try:
             unload_emotion()
             unload_whisper()
-            # 2. Initialize Service Instance
+           
             llmservice = LLMService()
             llmservice.install_model(instruction="llm")
 
-            # 3. Q&A Analysis Loop
+            
             unique_qids = {t.question_id for t in session.transcripts if t.question_id is not None}
             for qid in unique_qids:
                 question = db.query(Questions).filter(Questions.id == qid).first()
