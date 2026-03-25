@@ -31,7 +31,7 @@ The backend service for **Intraviewer**, an intelligent mock interview platform.
 </p>
 <p align="center">
   <img src="images/Screenshot%202026-02-26%20at%2012.09.59%20AM.png" alt="Feedback" width="45%">
-  <img src="images/Screenshot%202026-03-25%20at%203.57.03%E2%80%AFPM.png" alt="Analysis" width="45%">
+  <img src="images/Screenshot%202026-03-25%20at%203.57.03%E2%80%AFPM.png" alt="Analysis" width="35%">
 </p>
 
 ---
